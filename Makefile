@@ -1,10 +1,11 @@
 # This Makefile compiles Cython
 .POSIX:
 
-.PHONY: cython cython-gdb clean env-check install test wheel eigen3-clean venv venv-clean
+.PHONY: cython cython-gdb clean env-check install test test-sage wheel eigen3-clean venv venv-clean
 
 CONDA_ENV ?= sage106
 PYTHON = conda run -n $(CONDA_ENV) python
+SAGE_PYTHON = conda run -n $(CONDA_ENV) sage -python
 
 all: cython
 
@@ -25,6 +26,9 @@ install:
 
 test: cython
 	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -v
+
+test-sage: cython
+	PYTHONPATH=src $(SAGE_PYTHON) -m unittest discover -s tests/sage -v
 
 wheel:
 	$(MAKE) clean

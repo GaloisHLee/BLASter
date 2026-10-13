@@ -73,23 +73,6 @@ class ReductionApiTests(unittest.TestCase):
         self.assertEqual(reduced.shape, rows.shape)
         np.testing.assert_array_equal(transform @ rows, reduced)
 
-    def test_reduce_basis_preserves_sage_matrix_type(self):
-        from sage.all import ZZ, matrix
-
-        rows = matrix(ZZ, self.columns.T.tolist())
-        reduced, transform, _ = reduce_basis(
-            rows,
-            return_transform=True,
-            lll_size=3,
-            cores=1,
-            use_seysen=False,
-        )
-
-        self.assertEqual(reduced.base_ring(), ZZ)
-        self.assertEqual(transform.base_ring(), ZZ)
-        self.assertEqual(transform * rows, reduced)
-        self.assertIn("sage", type(reduced).__module__)
-
     def test_small_bkz_run_preserves_lattice(self):
         transform, reduced, _ = reduce(
             self.columns,
