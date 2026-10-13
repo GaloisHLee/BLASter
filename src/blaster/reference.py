@@ -1,0 +1,104 @@
+"""Exact transcription of BLASter ``SEGMENTED_LLL`` for ordinary LLL.
+
+Single segment (``segment_size = rank``), half-offset toggle, classical panel,
+exact rational GSO. This is a faithful reproduction of the validated reference
+algorithm — it never calls Sage ``LLL``/``BKZ``. The two-QR structure is
+realized by recomputing exact GSO after each committed operation; under exact
+arithmetic this yields the same ``(mu, r)`` exact Givens would.
+"""
+from ._exact import (
+    column,
+    delta_to_fraction,
+    nearest_core,
+    nearest_panel,
+    rational_gso,
+    to_int_matrix,
+    transpose_cols,
+    weak_lll_holds,
+)
+
+
+def _add_col(M, i, k, z):
+    """``M[k] += z * M[i]`` in place, where ``M`` is a list of column vectors."""
+    M[k] = [a + z * b for a, b in zip(M[k], M[i])]
+
+
+def _swap_cols(M, a, b):
+    M[a], M[b] = M[b], M[a]
+
+
+def _local_lll(cols, Ucols, offset, delta, tr):
+    """Size-reduce with ``nearest_core`` and swap adjacent pairs until local LLL.
+
+    Recomputes GSO after each committed addition: reducing column ``k`` against
+    ``b_i`` shifts ``mu[l,k]`` for ``l < i`` by ``z * mu[l,i]``, so a single
+    snapshot before the inner loop is wrong.
+    """
+    n = len(cols)
+    k = offset + 1
+    while k < n:
+        mu, r = rational_gso(cols)
+        for i in range(k - 1, offset - 1, -1):
+            z = nearest_core(-mu[i][k])
+            if z:
+                _add_col(cols, i, k, z)
+                _add_col(Ucols, i, k, z)
+                tr.append(("add", i, k, z, "nearest_core"))
+                mu, r = rational_gso(cols)
+        mu, r = rational_gso(cols)
+        if delta * r[k - 1] <= r[k] + mu[k - 1][k] ** 2 * r[k - 1]:
+            k += 1
+        else:
+            _swap_cols(cols, k - 1, k)
+            _swap_cols(Ucols, k - 1, k)
+            tr.append(("swap", k - 1, k))
+            if k > offset + 1:
+                k -= 1
+
+
+def _size_panel(cols, Ucols, tr):
+    """Classical full size-reduction with ``nearest_panel`` (round-half-to-even)."""
+    n = len(cols)
+    mu, r = rational_gso(cols)
+    for k in range(1, n):
+        for i in range(k - 1, -1, -1):
+            z = nearest_panel(-mu[i][k])
+            if z:
+                _add_col(cols, i, k, z)
+                _add_col(Ucols, i, k, z)
+                tr.append(("add", i, k, z, "nearest_panel"))
+                mu, r = rational_gso(cols)
+
+
+def lll_reduce(B0, delta=0.99):
+    """Exact segmented-LLL (single segment) returning ``(cols, U_rows, transcript)``.
+
+    ``B0`` is a matrix whose columns are basis vectors (nested lists, NumPy
+    2-D array, or Sage matrix). Returns the reduced basis as a list of columns,
+    the row-major transform ``U`` with ``B0 * U == B``, and the decision
+    transcript.
+    """
+    B0_rows = to_int_matrix(B0, name="B0")
+    m = len(B0_rows)
+    n = len(B0_rows[0])
+    d = delta_to_fraction(delta)
+
+    cols = [column(B0_rows, j) for j in range(n)]
+    Ucols = [[1 if r == j else 0 for r in range(n)] for j in range(n)]
+    tr = []
+
+    offset = 0
+    while True:
+        offset = (n // 2) if offset == 0 else 0
+        # The offset record heads each iteration; a closing offset record with
+        # stopped=True is appended once the final iteration proves weakly-LLL
+        # reduced, so no add/swap record is ever clobbered.
+        tr.append(("offset", offset, False))
+        _local_lll(cols, Ucols, offset, d, tr)
+        _size_panel(cols, Ucols, tr)
+        mu, r = rational_gso(cols)
+        if weak_lll_holds(mu, r, d):
+            tr.append(("offset", offset, True))
+            break
+
+    return cols, transpose_cols(Ucols), tr
