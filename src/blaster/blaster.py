@@ -3,18 +3,21 @@ BLASter lattice reduction: LLL with QR decomposition, Seysen's reduction, and
 segments, in which lattice reduction is done in parallel.
 """
 from functools import partial
+from math import isfinite
+from numbers import Integral, Real
 from sys import stderr
 from time import perf_counter_ns
 
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.animation import ArtistAnimation, PillowWriter
 
-# Local imports
-from blaster_core import \
-    set_debug_flag, set_num_cores, block_lll, block_deep_lll, block_bkz, ZZ_right_matmul
-from size_reduction import is_lll_reduced, is_weakly_lll_reduced, size_reduce, seysen_reduce
-from stats import get_profile, rhf, slope, potential
+from ._matrix import as_int64_matrix
+from ._core import set_debug_flag, set_num_cores, block_lll, block_deep_lll, block_bkz, \
+    ZZ_right_matmul
+from .size_reduction import is_lll_reduced, is_weakly_lll_reduced, size_reduce, seysen_reduce
+from .stats import get_profile, rhf, slope, potential
+
+
+MAX_BKZ_BLOCK_SIZE = 80
 
 
 class TimeProfile:
@@ -155,27 +158,149 @@ def bkz_reduce(B, U, U_seysen, lll_size, delta, depth,
         lll_reduce(B, U, U_seysen, lll_size, delta, depth, tprof, tracers, debug, use_seysen)
 
 
+def _integer_parameter(name, value, minimum):
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise ValueError(f"{name} must be an integer")
+    value = int(value)
+    if value < minimum:
+        raise ValueError(f"{name} must be at least {minimum}")
+    return value
+
+
+# Primes < 2**31 keep every intermediate product below 2**62, so the modular
+# Gaussian elimination in `_rank_mod_p` cannot overflow int64.
+_RANK_PRIMES = (2147483647, 2147483629, 2147483587, 2147483579, 2147483563)
+
+
+def _rank_mod_p(B, p):
+    """Return the exact rank of the integer matrix ``B`` over GF(p)."""
+    A = np.mod(B, p).astype(np.int64)
+    m, n = A.shape
+    r = 0
+    for col in range(n):
+        pivot = r
+        while pivot < m and A[pivot, col] == 0:
+            pivot += 1
+        if pivot == m:
+            continue
+        if pivot != r:
+            A[[r, pivot]] = A[[pivot, r]]
+        inv = pow(int(A[r, col]), p - 2, p)
+        A[r] = (A[r] * inv) % p
+        for row in range(r + 1, m):
+            if A[row, col]:
+                A[row] = (A[row] - A[row, col] * A[r]) % p
+        r += 1
+        if r == m:
+            break
+    return r
+
+
+def _is_full_column_rank(B):
+    """Return whether the columns of the integer matrix ``B`` are Q-linearly independent."""
+    n = B.shape[1]
+    return any(_rank_mod_p(B, p) == n for p in _RANK_PRIMES)
+
+
+def _validated_parameters(
+        B, lll_size, delta, cores, depth, beta, bkz_tours, bkz_size, bkz_prog):
+    B = as_int64_matrix(B, name="basis")
+    ambient_dimension, rank = B.shape
+    if ambient_dimension < rank:
+        raise ValueError("column basis rank cannot exceed its ambient dimension")
+    # A float64 SVD rank test is unreliable here: NumPy's default tolerance is
+    # s_max * max(M, N) * eps, so a full-rank integer basis whose columns span a
+    # wide dynamic range (e.g. O(1) and O(2**60), as in HNP lattices) is misread
+    # as rank deficient.  Rank over GF(p) never exceeds rank over Q, so a
+    # full-rank reading modulo any one prime proves independence, and checking
+    # several primes makes a spurious "dependent" verdict vanishingly unlikely.
+    if not _is_full_column_rank(B):
+        raise ValueError("basis vectors must be linearly independent")
+
+    if isinstance(delta, bool) or not isinstance(delta, Real) or not isfinite(float(delta)):
+        raise ValueError("delta must be a finite real number")
+    delta = float(delta)
+    if not 0.25 < delta < 1.0:
+        raise ValueError("delta must satisfy 0.25 < delta < 1.0")
+
+    lll_size = _integer_parameter("lll_size", lll_size, 2)
+    cores = _integer_parameter("cores", cores, 1)
+    depth = _integer_parameter("depth", depth, 0)
+    effective_lll_size = min(lll_size, rank)
+
+    if beta is None:
+        return (
+            B, effective_lll_size, delta, cores, depth,
+            None, None, None, None,
+        )
+
+    beta = _integer_parameter("beta", beta, 2)
+    if beta > MAX_BKZ_BLOCK_SIZE:
+        raise ValueError(f"beta must not exceed {MAX_BKZ_BLOCK_SIZE}")
+    if beta > rank:
+        raise ValueError("beta must not exceed the basis rank")
+    if depth:
+        raise ValueError("depth cannot be combined with beta")
+
+    bkz_tours = _integer_parameter("bkz_tours", bkz_tours, 1)
+    if bkz_size is None:
+        bkz_size = max(effective_lll_size, beta)
+    bkz_size = _integer_parameter("bkz_size", bkz_size, 2)
+    if bkz_size < beta:
+        raise ValueError("bkz_size must be at least beta")
+    bkz_size = min(bkz_size, rank)
+
+    if bkz_prog is None:
+        bkz_prog = beta
+    bkz_prog = _integer_parameter("bkz_prog", bkz_prog, 1)
+    if bkz_prog > beta:
+        raise ValueError("bkz_prog must not exceed beta")
+
+    return (
+        B, effective_lll_size, delta, cores, depth,
+        beta, bkz_tours, bkz_size, bkz_prog,
+    )
+
+
+def _progressive_betas(beta, increment):
+    """Return the upstream progressive-beta schedule for the validated block size."""
+    if beta < 40:
+        return ()
+    if increment >= beta:
+        return (beta,)
+    start = 40 + ((beta - 40) % increment)
+    return tuple(range(start, beta + 1, increment))
+
+
 def reduce(
         B, lll_size: int = 64, delta: float = 0.99, cores: int = 1, debug: bool = False,
-        verbose: bool = False, logfile: str = None, anim: str = None, depth: int = 0,
-        use_seysen: bool = False,
-        **kwds
-):
+        verbose: bool = False, logfile=None, anim=None, depth: int = 0,
+        use_seysen: bool = False, beta=None, bkz_tours: int = 8,
+        bkz_size=None, bkz_prog=None):
     """
-    :param B: a basis, consisting of *column vectors*.
-    :param delta: delta factor for Lagrange reduction,
-    :param cores: number of cores to use, and
-    :param lll_size: the block-size for LLL, and
-    :param debug: whether or not to debug and print more output on time consumption.
-    :param kwds: additional arguments (for BKZ reduction).
+    Reduce an int64 basis whose vectors are stored as columns.
+
+    ``delta`` is the Lovasz factor. ``lll_size`` and ``bkz_size`` control the
+    parallel segment sizes, while ``cores`` controls the OpenMP worker count.
+    Set ``depth`` for DeepLLL, or set ``beta`` (up to 80) for BKZ. DeepLLL and
+    BKZ cannot be requested together. ``use_seysen=False`` selects classical
+    size reduction instead of Seysen reduction.
+
+    For compatibility with the upstream algorithm, ``beta < 40`` selects
+    DeepLLL-4 preprocessing rather than a pruned BKZ tour.
 
     :return: tuple (U, B · U, tprof) where:
         U: the transformation matrix such that B · U is LLL reduced,
         B · U: an LLL-reduced basis,
         tprof: TimeProfile object.
     """
+    (
+        B, lll_size, delta, cores, depth,
+        beta, bkz_tours, bkz_size, bkz_prog,
+    ) = _validated_parameters(
+        B, lll_size, delta, cores, depth, beta, bkz_tours, bkz_size, bkz_prog
+    )
     n, tprof = B.shape[1], TimeProfile(use_seysen)
-    lll_size = min(max(2, lll_size), n)
 
     set_num_cores(cores)
     set_debug_flag(1 if debug else 0)
@@ -195,19 +320,26 @@ def reduce(
     has_logfile = logfile is not None
     if has_logfile:
         tstart = perf_counter_ns()
-        logfile = open(logfile, "w", encoding="utf8")
-        print('it,walltime,rhf,slope,potential,note', file=logfile, flush=True)
+        logfile_handle = open(logfile, "w", encoding="utf8")
+        print('it,walltime,rhf,slope,potential,note', file=logfile_handle, flush=True)
 
         def trace_logfile(it, prof, note):
             walltime = (perf_counter_ns() - tstart) * 10**-9
             print(f'{it:4d},{walltime:.6f},{rhf(prof):8.6f},{slope(prof):9.6f},'
-                  f'{potential(prof):9.3f},{note[0]}', file=logfile)
+                  f'{potential(prof):9.3f},{note[0]}', file=logfile_handle, flush=True)
 
         tracers['l'] = trace_logfile
 
-    # Set up animation
+    # Set up animation lazily so matplotlib remains an optional dependency.
     has_animation = anim is not None
     if has_animation:
+        try:
+            import matplotlib.pyplot as plt
+            from matplotlib.animation import ArtistAnimation, PillowWriter
+        except ImportError as exc:
+            raise RuntimeError(
+                "animation output requires the 'animation' optional dependencies"
+            ) from exc
         fig, ax = plt.subplots()
         ax.set(xlim=[0, n])
         artists = []
@@ -221,34 +353,33 @@ def reduce(
     U = np.identity(n, dtype=np.int64)
     U_seysen = np.identity(n, dtype=np.int64)
 
-    beta = kwds.get("beta")
     try:
-        if not beta:
-            lll_reduce(B, U, U_seysen, lll_size, delta, depth, tprof, tracers, debug, use_seysen)
-        else:
-            # Parse BKZ parameters:
-            bkz_tours = kwds.get("bkz_tours") or 1
-            bkz_size = kwds.get("bkz_size") or lll_size
-            bkz_prog = kwds.get("bkz_prog") or beta
-
-            # Progressive-BKZ: start running BKZ-beta' for some `beta' >= 40`,
-            # then increase the blocksize beta' by `bkz_prog` and run BKZ-beta' again,
-            # and repeat this until `beta' = beta`.
-            betas = range(40 + ((beta - 40) % bkz_prog), beta + 1, bkz_prog)
-
-            # In the literature on BKZ, it is usual to run LLL before calling the SVP oracle in BKZ.
-            # However, it is actually better to preprocess the basis with 4-deep-LLL instead of LLL,
-            # before calling the SVP oracle.
-            for beta_ in betas:
-                bkz_reduce(B, U, U_seysen, lll_size, delta, 4, beta_,
-                           bkz_tours if beta_ == beta else 1, bkz_size,
-                           tprof, tracers, debug, use_seysen)
-    except KeyboardInterrupt:
-        pass  # When interrupted, give the partially reduced basis.
-
-    # Close logfile
-    if has_logfile:
-        logfile.close()
+        try:
+            if beta is None:
+                lll_reduce(
+                    B, U, U_seysen, lll_size, delta, depth,
+                    tprof, tracers, debug, use_seysen,
+                )
+            elif beta < 40:
+                # Upstream behavior for small requested block sizes: run
+                # DeepLLL-4 without starting a pruned BKZ tour.
+                lll_reduce(
+                    B, U, U_seysen, lll_size, delta, 4,
+                    tprof, tracers, debug, use_seysen,
+                )
+            else:
+                # DeepLLL-4 is the preprocessing strategy used by the original BKZ path.
+                for beta_ in _progressive_betas(beta, bkz_prog):
+                    bkz_reduce(
+                        B, U, U_seysen, lll_size, delta, 4, beta_,
+                        bkz_tours if beta_ == beta else 1, bkz_size,
+                        tprof, tracers, debug, use_seysen,
+                    )
+        except KeyboardInterrupt:
+            pass  # Preserve the original behavior and return the partially reduced basis.
+    finally:
+        if has_logfile:
+            logfile_handle.close()
 
     # Save and/or show the animation
     if has_animation:

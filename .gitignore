@@ -1,5 +1,9 @@
 # Python cache
 __pycache__
+*.egg-info
+*.egg-info/
+*.sage.py
+/dist/
 
 # Shared libraries
 *.so
@@ -29,3 +33,6 @@ cysignals_crash_logs/
 /logs/
 /logs-flatter/
 /benchmark/results/
+/logs_other_*.csv
+/benchmark/logs_other_*.csv
+/debug.log

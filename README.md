@@ -1,76 +1,246 @@
 # BLASter
 
-BLASter is a proof of concept of an LLL-like lattice reduction algorithm that uses:
+BLASter is a research lattice-reduction tool built around a segmented, parallel
+LLL-like algorithm. It combines local LLL or DeepLLL, optional BKZ, Seysen or
+classical size reduction, and Eigen-backed integer matrix operations.
 
-- parallelization,
-- segmentation,
-- Seysen's reduction instead of size reduction, and
-- a linear algebra library.
+The project provides:
 
-## Disclaimer
+- an installable Python package;
+- a row-oriented NumPy and SageMath API;
+- the original column-oriented reduction API;
+- an fplll-compatible command-line interface; and
+- deterministic correctness tests and smoke benchmarks.
 
-The goal of this software is to showcase speed ups that are possible in lattice reduction software.
-This software is a *proof of concept*!
+## Status and limitations
 
-In particular, we **do not**:
+BLASter remains a research prototype. It does not guarantee termination or
+correct output for every lattice. The implementation uses signed 64-bit integer
+storage, so both input entries and intermediate transformations are subject to
+the int64 range. BKZ enumeration is limited to block size 80.
 
-- guarantee the algorithm terminates, nor claim its output is correct on all lattices,
-- support lattices with large entries,
-- consider issues / PRs that improve efficiency or robustness,
-- actively maintain this software.
+Use the transformation invariant and the reduction checks exposed by the test
+suite when evaluating new inputs. Do not treat BLASter as a hardened
+cryptographic implementation.
 
-We **do**:
+## Upstream provenance
 
-- happily answer any questions to explain design choices phrased as: *"Why is X done in Y way?"*. The answer may, in many cases, be: "because it is faster in practice".
-- encourage the cryptographic community to build a new robust lattice reduction library incorporating the ideas in this proof of concept.
+This checkout starts from the official
+[ludopulles/BLASter](https://github.com/ludopulles/BLASter) repository and
+incorporates upstream `main` through commit
+`68225ece2e10d6f50a5a811de63d97583a987dc6`.
 
-## Requirements
+The design paper is
+[Towards a modern LLL implementation](https://ir.cwi.nl/pub/35237).
 
-- python3
-- Cython version 3.0 or later
-- Python modules: `cysignals numpy setuptools` (installed system-wide or in locally through `make venv`)
-- The Eigen library version 3 or later (installed system-wide or locally through `make eigen3`)
+Important upstream changes retained by this checkout include:
 
-Optional:
+- pip-installable package layout under `src/blaster/`;
+- Cython extension name `blaster._core`;
+- a shared `_propagate_update` path for segmented block updates;
+- input-reading and stdio fixes;
+- removal of the deprecated `Eigen::initParallel()` call;
+- the `beta < 40` DeepLLL-4 behavior from upstream PR #6; and
+- the weak-LLL predicate without the legacy modulo step.
 
-- Python module: virtualenv (for creating a local virtual environment to install python3 modules)
-- fplll (for generating q-ary lattices with the `latticegen` command)
+## Environment
 
-## Building
+All repository commands in this checkout use the Conda environment `sage106`,
+containing SageMath 10.6 and Python 3.11. Verify it with:
 
-- Optional: Run `make eigen3` to install libeigen3 library in a subdirectory.
-- Optional: Run `make venv` to create a local virtual environment and install the required python3 modules.
-- Run `make` to compile all the Cython files in `core/`.
-
-## Debugging
-
-- Debug the C++/Cython code with the `libasan` and `libubsan` sanitizers by running `make cython-gdb`.
-    These sanitizers check for memory leaks, out of bounds accesses, and undefined behaviour.
-- When executing the `src/app.py`, preload libasan like this:
-    `LD_PRELOAD=$(gcc -print-file-name=libasan.so) src/app.py -pvi INPUTFILE`
-- If you want to run the program with the `gdb` debugger, read the [Cython documentation](https://cython.readthedocs.io/en/stable/src/userguide/debugging.html#running-the-debugger), for more info.
-
-## Running
-
-*Note: you first need to build the software, see above.*
-
-Run the command by e.g. typing `./python3 src/app.py -pvi INPUTFILE`.
-Add `-h` for seeing all available command line arguments.
-
-## Example
-
-Command: `time latticegen q 128 64 20 p | src/app.py -pq`.
-
-Expected output:
-```
-Profile: [9.38 9.39 9.30 9.28 9.18 ... 4.27 4.33 4.31 4.29 4.35]
-Root Hermite factor: 1.020447, ∥b_1∥ = 11906.636
-
-real	0m0,754s
-user	0m2,271s
-sys	0m0,105s
+```console
+make env-check
 ```
 
-To run deep-LLL with depth `4`, run `src/app.py -pq -i {lattice} -d4`.
+Build requirements are Cython 3 or later, NumPy, cysignals, setuptools, a C++17
+compiler, Eigen 3, and OpenMP. On macOS, the compiler must be able to find
+`libomp`; Homebrew and conda-forge installations are detected by the current
+build configuration. Matplotlib and Pillow are optional and are required only
+for animated profiles.
 
-To run progressive BKZ-60 (with 4-deep-LLL) with `1` tours and block size increments of `2`, run `src/app.py -pq -i {lattice} -b60 -t1 -P2`.
+If Eigen is not installed system-wide, install the vendored copy:
+
+```console
+make eigen3
+```
+
+## Build and install
+
+Build the package extension in place and run the tests:
+
+```console
+make cython
+make test
+```
+
+Build a wheel through the standard `pyproject.toml` workflow:
+
+```console
+make wheel
+```
+
+Install the current source into `sage106`:
+
+```console
+make install
+```
+
+The equivalent direct command is:
+
+```console
+conda run -n sage106 python -m pip install --no-build-isolation .
+```
+
+The upstream `make venv` and `make venv-clean` targets are also retained for
+environments that prefer a local virtual environment.
+
+## Python API
+
+`reduce_basis` is the recommended public interface. Basis vectors are rows by
+default, matching SageMath and common lattice-tool conventions:
+
+```python
+import numpy as np
+from blaster import reduce_basis
+
+basis = np.array([
+    [10, 0, 0],
+    [1, 10, 0],
+    [0, 1, 1],
+], dtype=np.int64)
+
+reduced, transform, profile = reduce_basis(
+    basis,
+    return_transform=True,
+    lll_size=3,
+    cores=1,
+    use_seysen=True,
+)
+assert np.array_equal(transform @ basis, reduced)
+```
+
+For a Sage integer matrix, `reduce_basis` returns Sage matrices and preserves
+the row-vector transformation convention:
+
+```python
+from sage.all import ZZ, matrix
+from blaster import reduce_basis
+
+basis = matrix(ZZ, [[10, 0, 0], [1, 10, 0], [0, 1, 1]])
+reduced, transform, profile = reduce_basis(basis, return_transform=True, cores=1)
+assert transform * basis == reduced
+```
+
+The lower-level `reduce` function retains BLASter's original column-vector
+convention and always returns NumPy int64 matrices:
+
+```python
+from blaster import reduce
+
+transform, reduced, profile = reduce(column_basis, cores=1)
+assert np.array_equal(column_basis @ transform, reduced)
+```
+
+Set `orientation="columns"` on `reduce_basis` when a type-preserving,
+column-oriented interface is needed.
+
+Runnable Sage scripts covering LLL, DeepLLL, BKZ, and column-oriented bases are
+available in [`examples/sage/`](examples/sage/). Run all of them with:
+
+```console
+bash examples/sage/run_all.sh
+```
+
+## CLI
+
+The CLI reads and writes fplll matrix syntax. The file format lists basis vectors
+as rows; BLASter converts them to its internal column representation.
+
+```console
+conda run -n sage106 blaster --input input.lat --output reduced.lat
+```
+
+stdin and stdout are used when paths are omitted:
+
+```console
+latticegen q 128 64 20 p | conda run --no-capture-output -n sage106 blaster --quiet --profile
+```
+
+Common reduction modes are:
+
+```console
+conda run -n sage106 blaster -i input.lat -d 4
+conda run -n sage106 blaster -i input.lat -b 60 -t 1 -P 2
+conda run -n sage106 blaster -i input.lat --no-seysen
+```
+
+Use `conda run -n sage106 blaster --help` for the complete parameter list.
+Invalid matrices, non-integer or out-of-range entries, incompatible options, and
+unsupported BKZ block sizes are reported as CLI errors without a traceback.
+
+## Tests
+
+```console
+make test
+```
+
+The suite covers NumPy and Sage inputs, row and column conventions, LLL,
+DeepLLL, BKZ, Seysen reduction, parallel segments, deterministic random and
+q-ary lattices, transformation invariants, weak LLL checks, int64 overflow,
+parameter validation, file I/O, stdin/stdout, and both CLI entry points.
+
+## Benchmarks
+
+Run the fast deterministic baseline from the repository root:
+
+```console
+conda run -n sage106 python benchmark/smoke_benchmark.py --dimensions 32 64 --cores 2
+conda run -n sage106 python benchmark/smoke_benchmark.py --dimensions 32 64 --cores 2 --seysen
+```
+
+The recorded development-machine results are in
+[`benchmark/SMOKE_BASELINE.md`](benchmark/SMOKE_BASELINE.md).
+
+The measured Flatter/BLASter behavior and performance comparison is documented
+in [`benchmark/FLATTER_VS_BLASTER.md`](benchmark/FLATTER_VS_BLASTER.md). The tools
+are treated as different algorithms, not interchangeable runtime backends.
+
+The original comparison scripts require their corresponding external tools and
+input directories. Run them from `benchmark/` after installing BLASter:
+
+```console
+cd benchmark
+conda run -n sage106 python benchmark.py dim 128 lattices lll
+```
+
+The scripts use the installed `blaster` command. Set `BLASTER_CMD` to override
+it when testing another build.
+
+## Algorithm and arithmetic specifications
+
+The next development stage is specified before core refactoring:
+
+- [`docs/spec/current-behavior-baseline.md`](docs/spec/current-behavior-baseline.md)
+  freezes provenance, commands, tests, benchmarks, defaults, and known limits;
+- [`docs/spec/blaster-algorithm.md`](docs/spec/blaster-algorithm.md) defines the
+  BLASter state machines and pseudocode independently of implementation types;
+- [`docs/spec/implementation-map.md`](docs/spec/implementation-map.md) maps each
+  reduction step to Python, Cython, C++, tests, and risks; and
+- [`docs/spec/arithmetic-model.md`](docs/spec/arithmetic-model.md) defines
+  FastInt64, CheckedInt64, Multiprecision, escalation, and verification.
+
+The accepted architecture decisions are indexed in
+[`docs/adr/`](docs/adr/). Flatter and fpylll/fplll remain benchmark,
+interoperability, and research-comparison subjects. They are not overflow or
+precision fallbacks for BLASter.
+
+## Debug build
+
+Build the Cython/C++ extension with address and undefined-behavior sanitizers:
+
+```console
+make cython-gdb
+```
+
+Sanitizer runtime setup is compiler- and platform-specific. The debug build does
+not change the Python API or CLI entry points.

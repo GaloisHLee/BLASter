@@ -8,7 +8,7 @@ from functools import cache
 import numpy as np
 
 # Local imports
-from blaster_core import ZZ_left_matmul_strided, FT_matmul
+from ._core import ZZ_left_matmul_strided, FT_matmul
 
 
 # Reduction properties:
@@ -24,11 +24,9 @@ def is_weakly_lll_reduced(R, delta=.99):
     n = len(R)
     for pos in range(0, n - 1):
         # vectors are b0 = (u, 0), b1 = (v, w).
-        u = abs(R[pos, pos])
+        u = R[pos, pos]
         v, w = R[pos, pos + 1], R[pos + 1, pos + 1]
-        v_mod = ((v + u/2) % u) - u/2
-
-        if v_mod**2 + w**2 <= delta * u**2:
+        if v**2 + w**2 <= delta * u**2:
             return False  # ||b1||^2 <= delta ||b0||^2
     return True
 

@@ -3,6 +3,7 @@ import os
 import signal
 import subprocess
 
+BLASTER_CMD = os.environ.get("BLASTER_CMD", "blaster -q")
 ERROR_FILE = open("results/max_q_errors.txt", "w", encoding='utf8')
 NUM_TRIALS = 10
 
@@ -54,7 +55,7 @@ def run_command(cmd, timeout, description):
 def run_blaster(m, lgq, seed, path):
     timeout = 5 if m < 256 else 15
     desc = f"BLASter(m={m}, lgq={lgq}, seed={seed})"
-    return run_command(f"../python3 ../src/app.py -qi {path}", timeout, desc)
+    return run_command(f"{BLASTER_CMD} -i {path}", timeout, desc)
 
 
 def count_successes(m, lgq, path):
@@ -66,7 +67,7 @@ def count_successes(m, lgq, path):
             wt.append(result)
 
     # Report times
-    mint, avgt, maxt = (min(wt), sum(wt)/len(wt), max(wt)) if wt else (0,0,0)
+    mint, avgt, maxt = (min(wt), sum(wt)/len(wt), max(wt)) if wt else (0, 0, 0)
     print(f"{m:4d},{lgq:2d},{len(wt):2d},{mint:6.2f},{avgt:6.2f},{maxt:6.2f}", flush=True)
 
     # Return number of successes

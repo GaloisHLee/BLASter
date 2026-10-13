@@ -1,0 +1,6 @@
+include LICENSE Makefile README.md
+include core/*.pyx core/*.pxd core/*.cpp core/*.hpp
+recursive-include benchmark *.md *.py
+include benchmark/flatter_vs_blaster.csv
+recursive-include examples *.md *.sage *.sh
+recursive-include docs *.md

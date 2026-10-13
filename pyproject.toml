@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=42", "wheel", "Cython>=3.0.0", "numpy", "cysignals"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blaster"
+version = "1.0"
+description = "Segmented parallel LLL-like lattice reduction"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy", "cysignals"]
+
+[project.optional-dependencies]
+animation = ["matplotlib", "pillow"]
+
+[project.scripts]
+blaster = "blaster.app:main"

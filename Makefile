@@ -1,28 +1,39 @@
 # This Makefile compiles Cython
 .POSIX:
 
-.PHONY: cython cython-gdb venv-clean eigen3-clean
+.PHONY: cython cython-gdb clean env-check install test wheel eigen3-clean venv venv-clean
 
-# if virtualenv directory venv exists then prefer venv/bin/python3 over system python3
-VENV    := venv
-PYTHONV := python3
-PYTHON  = $(or $(wildcard $(VENV)/bin/$(PYTHONV)), $(shell command -v $(PYTHONV)), $(PYTHONV))
-
+CONDA_ENV ?= sage106
+PYTHON = conda run -n $(CONDA_ENV) python
 
 all: cython
 
 clean:
 	$(PYTHON) setup.py clean
-	rm -rf build cysignals_crash_logs
+	rm -rf build dist cysignals_crash_logs blaster.egg-info src/blaster.egg-info
+	rm -f blaster_core*.so src/blaster/blaster_core*.so src/blaster_core*.so src/blaster/_core*.so
 
 # Run
 cython:
-	$(PYTHON) setup.py build_ext
+	$(PYTHON) setup.py build_ext --inplace
+
+env-check:
+	$(PYTHON) -c "from sage.all import version; print(version())"
+
+install:
+	$(PYTHON) -m pip install --no-build-isolation --no-deps .
+
+test: cython
+	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -v
+
+wheel:
+	$(MAKE) clean
+	$(PYTHON) -m pip wheel --no-build-isolation --no-deps --no-cache-dir --wheel-dir dist .
 
 # Debug
 # The LD_PRELOAD trick is from https://github.com/grpc/grpc/issues/25819
 cython-gdb:
-	$(PYTHON) setup.py build_ext --cython-gdb
+	$(PYTHON) setup.py build_ext --inplace --cython-gdb
 
 
 ### Rules to install Eigen C++ template library for linear algebra locally
@@ -45,17 +56,17 @@ eigen3-clean:
 	rm -rf eigen3 eigen-$(EIGEN_VERSION) eigen-$(EIGEN_VERSION).tar.gz
 
 
-
 ### Rules to create a virtual environment with up-to-date numpy and cython
 
 # Default requirements (maybe set a specific version of numpy & cython?)
 PIP_REQUIREMENTS := pip cython cysignals numpy setuptools matplotlib
+VENV := venv
+PYTHONV := python3
 
 venv:
 	@if [ "$(VIRTUAL_ENV)" != "" ]; then echo "Active virtual environment detected. Please run 'deactivate' first!"; false; fi
 	$(PYTHON) -m pip install --upgrade pip 2> /dev/null || echo "ERROR: Upgrading pip failed!"
-	$(PYTHON) -m pip install virtualenv 2> /dev/null || echo "ERROR: Installing pip package virtualenv failed!"
-	$(PYTHON) -m virtualenv $(VENV)
+	$(PYTHON) -m virtualenv $(VENV) || $(PYTHON) -m venv $(VENV) || echo "ERROR: creating virtual environment failed! Please (pip) install virtualenv or venv."
 	-@rm activate 2>/dev/null
 	ln -s $(VENV)/bin/activate .
 	printf "#!/usr/bin/env bash\nOPENBLAS_NUM_THREADS=1 $(VENV)/bin/$(PYTHONV) \$$*\n" > ./$(PYTHONV)
