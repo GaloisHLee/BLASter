@@ -21,7 +21,14 @@ CASES = {
 
 
 class TestReferenceMatchesFastInt64(unittest.TestCase):
-    """Acceptance #5: exact B/U equality pins the same deterministic decisions."""
+    """Acceptance #5: the exact reference matches validated FastInt64 decisions.
+
+    Exact == binary64 only when binary64 never rounds a half-integer GSO
+    coefficient across a tie. The spec's "Known limitations" records that
+    binary64 CAN flip such ties, so bit-equality is asserted only on curated
+    inputs with no exact-half ``mu``; the fuzz test instead asserts the exact
+    invariant — the reference output always verifies independently.
+    """
 
     def test_deterministic_cases_match(self):
         for name, A in CASES.items():
@@ -33,19 +40,56 @@ class TestReferenceMatchesFastInt64(unittest.TestCase):
                 np.testing.assert_array_equal(B_ref, B_fast)
                 np.testing.assert_array_equal(np.array(U_ref, dtype=np.int64), U_fast)
 
-    def test_fuzz_matches(self):
-        rs = np.random.RandomState(1234)
-        for n in range(2, 9):
-            for trial in range(20):
-                A = rs.randint(-30, 30, size=(n, n)).astype(np.int64)
+    def test_fuzz_output_always_verifies(self):
+        """Random inputs: the exact reference must always verify independently.
+
+        We do NOT assert bit-equality with binary64 ``reduce`` here: near a
+        half-integer GSO coefficient binary64 can flip the tie (spec "Known
+        limitations"), landing on a different-but-also-valid reduced basis.
+        Seed 999 / [-8, 8] deliberately produces such ties so the divergence
+        branch is exercised. On any divergence both outputs must still verify
+        exactly — i.e. the difference is a binary64 tie-flip, not a reference
+        bug.
+        """
+        rs = np.random.RandomState(999)
+        diverged = 0
+        for n in range(2, 11):
+            for trial in range(60):
+                A = rs.randint(-8, 8, size=(n, n)).astype(np.int64)
                 try:
                     U_fast, B_fast, _ = reduce(A, lll_size=n, delta=0.99, cores=1)
                 except Exception:
                     continue  # rank-deficient or non-square reduce rejected
                 cols_ref, U_ref, _ = lll_reduce(A, delta=0.99)
                 B_ref = np.array(cols_ref, dtype=np.int64).T
-                np.testing.assert_array_equal(B_ref, B_fast)
-                np.testing.assert_array_equal(np.array(U_ref, dtype=np.int64), U_fast)
+                rep = verify_reduction(A, B_ref, np.array(U_ref, dtype=np.int64), delta=0.99)
+                self.assertTrue(rep.verified)
+                if not np.array_equal(B_ref, B_fast):
+                    diverged += 1
+                    rep_fast = verify_reduction(A, B_fast, U_fast, delta=0.99)
+                    self.assertTrue(rep_fast.verified)
+        # This seed/range contains half-integer ties; assert the divergence
+        # path was exercised rather than silently skipped.
+        self.assertGreater(diverged, 0)
+
+    def test_half_integer_tie_diverges_from_binary64(self):
+        """Pin a concrete binary64 half-integer tie the spec records as a limit.
+
+        ``mu = -3/2`` cannot be stored exactly in binary64; FastInt64's Givens
+        path reads ``-1.4999999999999998`` and rounds toward zero, while the
+        exact reference rounds the tie away from zero. Both results are valid
+        LLL-reduced bases of the same lattice; the exact reference is the
+        authoritative one.
+        """
+        A = np.array([[3, -4], [0, -1]], dtype=np.int64)
+        cols_ref, U_ref, _ = lll_reduce(A, delta=0.99)
+        B_ref = np.array(cols_ref, dtype=np.int64).T
+        rep = verify_reduction(A, B_ref, np.array(U_ref, dtype=np.int64), delta=0.99)
+        self.assertTrue(rep.verified)
+        np.testing.assert_array_equal(B_ref, np.array([[-1, 1], [-1, -2]], dtype=np.int64))
+        U_fast, B_fast, _ = reduce(A, lll_size=2, delta=0.99, cores=1)
+        # binary64 flips the -3/2 tie: FastInt64 lands on a different valid basis.
+        self.assertFalse(np.array_equal(B_ref, B_fast))
 
 
 class TestReferenceOutputAcceptedByVerifier(unittest.TestCase):
