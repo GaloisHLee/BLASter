@@ -259,6 +259,29 @@ def _depth_param(depth):
     return depth
 
 
+def _progressive_betas(beta, increment):
+    """Return the upstream progressive-beta schedule for the validated block size.
+
+    Exact transcription of FastInt64 ``_progressive_betas`` (pure integer
+    arithmetic, no floating point). ``beta`` is the validated block size and
+    ``increment`` is ``bkz_prog`` (``1 <= increment <= beta``):
+
+    * ``beta < 40`` selects DeepLLL-4 preprocessing rather than a pruned BKZ
+      tour, so the schedule is empty.
+    * ``increment >= beta`` collapses to the single final tour ``(beta,)``.
+    * otherwise the schedule is ``range(start, beta + 1, increment)`` with
+      ``start = 40 + ((beta - 40) % increment)`` — the smallest value ``>= 40``
+      congruent to ``beta`` modulo ``increment`` — so it always begins in
+      ``[40, 40 + increment)`` and always ends at ``beta``.
+    """
+    if beta < 40:
+        return ()
+    if increment >= beta:
+        return (beta,)
+    start = 40 + ((beta - 40) % increment)
+    return tuple(range(start, beta + 1, increment))
+
+
 def lll_reduce(B0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False, depth=0):
     """Exact segmented-LLL returning ``(cols, U_rows, transcript)``.
 

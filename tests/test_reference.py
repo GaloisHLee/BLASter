@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 
 from blaster import reduce, verify_reduction
-from blaster.reference import lll_reduce
+from blaster.reference import lll_reduce, _progressive_betas
 
 
 CASES = {
@@ -554,6 +554,59 @@ class TestRowConvention(unittest.TestCase):
         rep = verify_reduction(A0.T, np.array(rows, dtype=object).T,
                                np.array(T, dtype=object).T, delta=0.99)
         self.assertTrue(rep.verified)
+
+
+class TestProgressiveBetaSchedule(unittest.TestCase):
+    """D-1: direct transcription of the FastInt64 ``_progressive_betas`` schedule.
+
+    The schedule is a pure integer function of ``(beta, increment)``; ``beta`` is
+    the validated block size (>= 1) and ``increment`` is ``bkz_prog``
+    (``1 <= increment <= beta``). It is the reference engine's transcription of
+    the upstream progressive-beta sequence used by the segmented BKZ path.
+    """
+
+    def test_beta_below_40_returns_empty(self):
+        # beta < 40 selects DeepLLL-4, not a pruned BKZ tour: no schedule.
+        self.assertEqual(_progressive_betas(1, 1), ())
+        self.assertEqual(_progressive_betas(39, 1), ())
+        self.assertEqual(_progressive_betas(39, 39), ())
+
+    def test_increment_at_least_beta_returns_single(self):
+        # increment >= beta collapses the schedule to the single final beta.
+        self.assertEqual(_progressive_betas(40, 40), (40,))
+        self.assertEqual(_progressive_betas(45, 45), (45,))
+        self.assertEqual(_progressive_betas(45, 50), (45,))
+        self.assertEqual(_progressive_betas(50, 80), (50,))
+
+    def test_exact_schedule_tuples(self):
+        # Hand-computed: start = 40 + ((beta - 40) % increment), step=increment,
+        # inclusive of beta.
+        self.assertEqual(_progressive_betas(80, 8), (40, 48, 56, 64, 72, 80))
+        self.assertEqual(_progressive_betas(79, 5), (44, 49, 54, 59, 64, 69, 74, 79))
+        self.assertEqual(_progressive_betas(60, 10), (40, 50, 60))
+        self.assertEqual(_progressive_betas(59, 10), (49, 59))
+        self.assertEqual(_progressive_betas(43, 3), (40, 43))
+        self.assertEqual(_progressive_betas(42, 3), (42,))
+        self.assertEqual(_progressive_betas(41, 3), (41,))
+
+    def test_every_schedule_starts_in_first_window_and_ends_at_beta(self):
+        for beta in range(40, 81):
+            for increment in range(1, beta + 1):
+                s = _progressive_betas(beta, increment)
+                self.assertGreaterEqual(len(s), 1)
+                self.assertEqual(s[-1], beta, (beta, increment))
+                self.assertGreaterEqual(s[0], 40, (beta, increment))
+                self.assertLess(s[0], 40 + increment, (beta, increment))
+
+    def test_matches_fastint64_source_of_truth(self):
+        from blaster.blaster import _progressive_betas as _fast_progressive_betas
+        for beta in range(1, 81):
+            for increment in range(1, beta + 1):
+                self.assertEqual(
+                    _progressive_betas(beta, increment),
+                    _fast_progressive_betas(beta, increment),
+                    (beta, increment),
+                )
 
 
 if __name__ == "__main__":
