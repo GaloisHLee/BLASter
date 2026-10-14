@@ -230,6 +230,15 @@ or earlier if every open item is blocked on an external decision. The loop runs 
 an explicit **停** from the user; it never stops itself just because a stage finished
 — the next stage is already specified above.
 
+**Final whole-branch review (2026-10-15):** a fresh independent reviewer inspected
+`537c4c6..HEAD` (55 commits, 18 files, +1812/−64) and verified all §3 constraints and
+§9 are satisfied — none violated — with no Critical/Important findings and no
+correctness bugs in the exact/reference transcription. Two Minor notes are deferred
+by design, both documented Stage-5 scope: (1) `reference.bkz_reduce` transcribes the
+per-segment kernel, not the full FastInt64 progressive/segmented BKZ tour; (2)
+`_progressive_betas` is transcribed and pinned but intentionally unwired (D-1 =
+schedule transcription only). Suites green: `make test` 187/187, `make test-sage` 14/14.
+
 ## 9. Explicit out-of-scope / do-not-drift-into
 
 - Do **not** change the FastInt64 engine's arithmetic to "fix" int64 overflow.
