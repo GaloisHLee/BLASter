@@ -219,6 +219,46 @@ class TestWeakLllAndSizeReduced(unittest.TestCase):
         self.assertFalse(is_size_reduced(mu_bad))
 
 
+class TestClassicalSizeReductionDefinition(unittest.TestCase):
+    """F-3: pin the classical size-reduction postcondition at the definition
+    level — ``|mu[i][j]| <= 1/2`` for every ``i < j`` — against hand-derived
+    exact GSO coefficients, not only the adjacent 2x2 case already covered.
+
+    Each basis below is upper-triangular (as a column-basis matrix), so its
+    exact GSO is hand-computable: ``mu[i][j] = B[i][j] / B[i][i]`` and
+    ``r[i] = B[i][i]**2``.  A coefficient of exactly ``1/2`` (or ``-1/2``) is
+    allowed (the boundary is non-strict); anything strictly larger in
+    magnitude fails.
+    """
+
+    def test_boundary_half_is_size_reduced(self):
+        # columns (2,0,0),(1,2,0),(-1,1,2) -> mu[0][1]=1/2, mu[0][2]=-1/2, mu[1][2]=1/2
+        mu, r = rational_gso([[2, 0, 0], [1, 2, 0], [-1, 1, 2]])
+        self.assertEqual(mu[0][1], Fraction(1, 2))
+        self.assertEqual(mu[0][2], Fraction(-1, 2))
+        self.assertEqual(mu[1][2], Fraction(1, 2))
+        self.assertTrue(is_size_reduced(mu))
+
+    def test_single_coefficient_above_half_violates(self):
+        # columns (2,0,0),(1,4,0),(-1,3,2): mu[0][1]=1/2 and mu[0][2]=-1/2 sit
+        # on the boundary, but mu[1][2]=3/4 alone exceeds 1/2, so the check
+        # must examine every pair rather than only the first off-diagonal.
+        mu, _ = rational_gso([[2, 0, 0], [1, 4, 0], [-1, 3, 2]])
+        self.assertEqual(mu[0][1], Fraction(1, 2))
+        self.assertEqual(mu[0][2], Fraction(-1, 2))
+        self.assertEqual(mu[1][2], Fraction(3, 4))
+        self.assertFalse(is_size_reduced(mu))
+
+    def test_negative_coefficient_below_negative_half_violates(self):
+        # columns (2,0,0),(0,4,0),(0,-3,2): mu[1][2] = -3/4 < -1/2, so the
+        # absolute value in the definition is what fails.
+        mu, _ = rational_gso([[2, 0, 0], [0, 4, 0], [0, -3, 2]])
+        self.assertEqual(mu[0][1], Fraction(0))
+        self.assertEqual(mu[0][2], Fraction(0))
+        self.assertEqual(mu[1][2], Fraction(-3, 4))
+        self.assertFalse(is_size_reduced(mu))
+
+
 class TestNearest(unittest.TestCase):
     def test_nearest_core_ties_away_from_zero(self):
         cases = {

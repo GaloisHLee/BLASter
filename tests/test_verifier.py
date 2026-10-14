@@ -81,6 +81,26 @@ class TestPostconditions(unittest.TestCase):
         self.assertTrue(rep.size_reduced_ok)  # mu = 1/2 is allowed
         self.assertFalse(rep.verified)
 
+    def test_classical_size_reduction_boundary_half_is_verified(self):
+        # 3x3 row-major basis, columns (4,0,0),(2,4,0),(2,2,4): every
+        # mu[i][j] = B[i][j]/B[i][i] = 1/2 exactly, so the non-strict
+        # classical size-reduction boundary is accepted on a full 3x3 basis.
+        B0 = [[4, 2, 2], [0, 4, 2], [0, 0, 4]]
+        rep = verify_reduction(B0, B0, np.eye(3, dtype=np.int64), delta=0.99)
+        self.assertTrue(rep.weak_lll_ok)
+        self.assertTrue(rep.size_reduced_ok)
+        self.assertTrue(rep.verified)
+
+    def test_classical_size_reduction_postcondition_isolates_from_weak_lll(self):
+        # Same geometry as above but B0[0][1] = 3, so mu[0][1] = 3/4 > 1/2.
+        # r = [16, 16, 16] keeps weak-LLL satisfied; only the classical
+        # size-reduction gate fires, pinning the postcondition in isolation.
+        B0 = [[4, 3, 2], [0, 4, 2], [0, 0, 4]]
+        rep = verify_reduction(B0, B0, np.eye(3, dtype=np.int64), delta=0.99)
+        self.assertTrue(rep.weak_lll_ok)
+        self.assertFalse(rep.size_reduced_ok)
+        self.assertFalse(rep.verified)
+
     def test_wide_dynamic_range_certified(self):
         B0 = diag(1, 2**30, 2**60, 2**90)
         rep = verify_reduction(B0, B0, diag(1, 1, 1, 1), delta=0.99)
