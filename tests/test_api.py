@@ -194,5 +194,30 @@ class ReferenceEngineTests(unittest.TestCase):
             reduce_basis([[1, 0], [0, 1]], engine="quantum")
 
 
+class PublicExportsTests(unittest.TestCase):
+    """Exact reference reducer and Sage accelerator are public on ``blaster``."""
+
+    def test_lll_reduce_rows_is_public(self):
+        from blaster import lll_reduce_rows
+        from blaster.reference import lll_reduce_rows as _ref
+        self.assertIs(lll_reduce_rows, _ref)
+        rows = [[10, 0, 0], [1, 10, 0], [0, 1, 1]]
+        reduced, T, transcript = lll_reduce_rows(rows, delta=0.99)
+        np.testing.assert_array_equal(
+            np.array(T, dtype=object) @ np.array(rows, dtype=object),
+            np.array(reduced, dtype=object),
+        )
+        self.assertTrue(transcript)
+
+    def test_sage_gso_is_public(self):
+        from blaster import sage_gso
+        from blaster.verify_sage import sage_gso as _ref
+        self.assertIs(sage_gso, _ref)
+        cols = [[3, 1, 4], [1, 5, 9], [2, 6, 5]]
+        mu, r = sage_gso(cols)
+        self.assertEqual(len(mu), 3)
+        self.assertEqual(len(r), 3)
+
+
 if __name__ == "__main__":
     unittest.main()
