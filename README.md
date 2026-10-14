@@ -177,6 +177,16 @@ rep = verify_reduction(B0, B, U, delta=0.99, gso="sage")
 assert rep.verified
 ```
 
+The exact reference reducer accepts the same selector on its internal
+Gram-Schmidt primitive (the algorithm is unchanged and still never calls Sage
+LLL/BKZ):
+
+```python
+from blaster import lll_reduce_rows
+
+rows, T, transcript = lll_reduce_rows(A0, delta=0.99, gso="sage")
+```
+
 Runnable Sage scripts covering LLL, DeepLLL, BKZ, and column-oriented bases are
 available in [`examples/sage/`](examples/sage/). Run all of them with:
 
