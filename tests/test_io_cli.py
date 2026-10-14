@@ -211,6 +211,22 @@ class CommandLineTests(unittest.TestCase):
         self.assertIn("reference", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
 
+    def test_cli_reference_engine_profiles_huge_basis(self):
+        big = 1 << 2000  # exceeds the float64 range np.linalg.qr coerces to
+        source = io.StringIO()
+        write_lattice(
+            np.array([[big, 0, 0], [0, big, 0], [0, 0, 1]], dtype=object),
+            source,
+            exact=True,
+        )
+        result = self.run_cli(
+            "--engine", "reference", "--profile", "--cores", "1",
+            input_text=source.getvalue(),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("RHF =", result.stderr)
+        self.assertIn("slope =", result.stderr)
+
     def test_cli_reference_engine_profiles_reduced_basis(self):
         big = 1 << 70  # exceeds signed int64
         source = io.StringIO()
