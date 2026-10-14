@@ -206,7 +206,7 @@ class TestTranscript(unittest.TestCase):
                 _, a, b = rec
                 B[a], B[b] = B[b], B[a]
                 U[a], U[b] = U[b], U[a]
-            # "offset" records carry no column operation
+            # "offset" and "segment" records carry no column operation
         self.assertEqual(B, cols_ref)
         # replay accumulates columns; U_ref is row-major, so transpose to compare
         U_rows = [[U[j][r] for j in range(n)] for r in range(n)]
@@ -220,7 +220,7 @@ class TestTranscript(unittest.TestCase):
         self.assertEqual(tr[-1][0], "offset")
         self.assertTrue(tr[-1][2])     # final iteration reports the stop decision
         for rec in tr:
-            self.assertIn(rec[0], ("add", "swap", "offset"))
+            self.assertIn(rec[0], ("add", "swap", "offset", "segment"))
             if rec[0] == "add":
                 self.assertIn(rec[4], ("nearest_core", "nearest_panel"))
 
@@ -265,6 +265,52 @@ class TestTranscript(unittest.TestCase):
             [("offset", 1, False), ("offset", 0, False),
              ("offset", 1, False), ("offset", 1, True)],
         )
+
+    def test_segment_commits_partition_each_phase(self):
+        """A-3: each phase's segment transforms commit in ascending order.
+
+        Between two ``offset`` records the transcript lists exactly the
+        segments of ``[offset, n)`` — each ``("segment", start, width)`` record
+        opening that segment's local-LLL operations — in ascending start order,
+        with the classical panel size-reduce following all segments. A verifier
+        therefore sees the basis change only at segment boundaries.
+        """
+        A = CASES["rand5"]  # n = 5
+        n = A.shape[1]
+        lll_size = 2
+        block = min(lll_size, n)
+        cols_ref, U_ref, tr = lll_reduce(A, delta=0.99, lll_size=lll_size)
+
+        phases, cur = [], []
+        for rec in tr:
+            if rec[0] == "offset":
+                if cur:
+                    phases.append(cur)
+                    cur = []
+                if rec[2]:
+                    break  # closing offset record ends the transcript
+            else:
+                cur.append(rec)
+
+        offset = 0
+        for p in phases:
+            offset = (block // 2) if offset == 0 else 0
+            self.assertEqual(
+                [r for r in p if r[0] == "segment"],
+                [("segment", i, min(block, n - i)) for i in range(offset, n, block)],
+            )
+            start = end = None
+            panel = False
+            for r in p:
+                if r[0] == "segment":
+                    self.assertFalse(panel)  # panel is the last step of a phase
+                    start, end = r[1], r[1] + r[2]
+                elif r[0] == "add" and r[4] == "nearest_panel":
+                    panel = True
+                else:  # nearest_core add or swap, inside the open segment
+                    self.assertFalse(panel)
+                    self.assertGreaterEqual(r[1], start)
+                    self.assertLess(r[2], end)
 
 
 class TestInputValidation(unittest.TestCase):

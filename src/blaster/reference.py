@@ -130,6 +130,8 @@ def lll_reduce(B0, delta=0.99, *, gso=None, lll_size=None):
         # reduced, so no add/swap record is ever clobbered.
         tr.append(("offset", offset, False))
         for i in range(offset, n, block):
+            w = min(i + block, n) - i
+            tr.append(("segment", i, w))
             _local_lll(cols, Ucols, i, min(i + block, n), d, tr, gso_fn)
         _size_panel(cols, Ucols, tr, gso_fn)
         mu, r = gso_fn(cols)
