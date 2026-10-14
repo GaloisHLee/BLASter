@@ -7,6 +7,8 @@ bug, never a reducer verdict.
 """
 from fractions import Fraction
 
+from ._exact import rational_gso
+
 
 def _py_fraction(sage_q):
     """Sage Integer/Rational -> Python Fraction, exactly."""
@@ -35,3 +37,20 @@ def sage_gso(cols):
         for j in range(i + 1, n):
             mu[i][j] = _py_fraction(R[j, i])
     return mu, r
+
+
+def resolve_gso(gso):
+    """Resolve a GSO backend selector to a ``(mu, r)`` callable.
+
+    ``None`` and ``"rational"`` select the pure-Python exact GSO; ``"sage"``
+    selects the Sage ``gram_schmidt`` accelerator; a callable is used directly.
+    Both backends return Python ``Fraction`` values under the same column
+    convention, so they are interchangeable.
+    """
+    if gso is None or gso == "rational":
+        return rational_gso
+    if gso == "sage":
+        return sage_gso
+    if callable(gso):
+        return gso
+    raise ValueError("gso must be None, 'rational', 'sage', or a callable")

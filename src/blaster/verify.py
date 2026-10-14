@@ -13,10 +13,10 @@ from ._exact import (
     full_column_rank,
     is_size_reduced,
     matmul_columns,
-    rational_gso,
     to_int_matrix,
     weak_lll_holds,
 )
+from .verify_sage import resolve_gso
 
 
 class VerificationFailed(Exception):
@@ -42,22 +42,6 @@ class VerificationReport:
     size_reduced_ok: bool
     delta: Fraction
     mode: str
-
-
-def _resolve_gso(gso):
-    """Resolve the ``gso`` argument of :func:`verify_reduction` to a callable.
-
-    ``None`` and ``"rational"`` select the pure-Python exact GSO; ``"sage"``
-    selects the Sage ``gram_schmidt`` accelerator; a callable is used directly.
-    """
-    if gso is None or gso == "rational":
-        return rational_gso
-    if gso == "sage":
-        from .verify_sage import sage_gso
-        return sage_gso
-    if callable(gso):
-        return gso
-    raise ValueError("gso must be None, 'rational', 'sage', or a callable")
 
 
 def verify_reduction(B0, B, U, delta=0.99, *, mode="lll", gso=None):
@@ -95,7 +79,7 @@ def verify_reduction(B0, B, U, delta=0.99, *, mode="lll", gso=None):
 
     d = delta_to_fraction(delta)
     cols = [[B_rows[r][j] for r in range(m)] for j in range(n)]
-    mu, r = _resolve_gso(gso)(cols)
+    mu, r = resolve_gso(gso)(cols)
 
     weak_lll_ok = weak_lll_holds(mu, r, d)
     size_reduced_ok = is_size_reduced(mu)

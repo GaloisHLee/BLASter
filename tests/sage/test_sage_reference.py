@@ -7,6 +7,7 @@ from sage.all import matrix, ZZ
 
 from blaster._exact import rational_gso, to_int_matrix
 from blaster.api import reduce_basis
+from blaster.reference import lll_reduce, lll_reduce_rows
 from blaster.verify import verify_reduction
 from blaster.verify_sage import sage_gso
 
@@ -62,6 +63,30 @@ class TestReduceBasisSageType(unittest.TestCase):
         B_red, T, _ = reduce_basis(A, engine="reference", return_transform=True)
         self.assertTrue(type(B_red).__module__.startswith("sage."))
         self.assertTrue(type(T).__module__.startswith("sage."))
+
+
+class TestReferenceGsoBackend(unittest.TestCase):
+    """The reference reducer's ``gso`` backend is a drop-in exact primitive."""
+
+    def test_lll_reduce_gso_sage_matches_default(self):
+        B0 = [[3, 1, 4], [1, 5, 9], [2, 6, 5]]
+        cols_def, U_def, tr_def = lll_reduce(B0, delta=0.99)
+        cols_sage, U_sage, tr_sage = lll_reduce(B0, delta=0.99, gso="sage")
+        self.assertEqual(cols_def, cols_sage)
+        self.assertEqual(U_def, U_sage)
+        self.assertEqual(tr_def, tr_sage)
+
+    def test_lll_reduce_rows_gso_sage_matches_default(self):
+        A0 = [[3, 1, 4], [1, 5, 9], [2, 6, 5]]
+        rows_def, T_def, tr_def = lll_reduce_rows(A0, delta=0.99)
+        rows_sage, T_sage, tr_sage = lll_reduce_rows(A0, delta=0.99, gso="sage")
+        self.assertEqual(rows_def, rows_sage)
+        self.assertEqual(T_def, T_sage)
+        self.assertEqual(tr_def, tr_sage)
+
+    def test_lll_reduce_gso_invalid_selector_raises(self):
+        with self.assertRaisesRegex(ValueError, "gso"):
+            lll_reduce([[3, 1, 4], [1, 5, 9], [2, 6, 5]], gso="numpy")
 
 
 if __name__ == "__main__":
