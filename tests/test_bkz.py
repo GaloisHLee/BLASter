@@ -9,6 +9,10 @@ from blaster._bkz import (
     enumeration,
     get_pruning_coefficients,
 )
+from blaster._exact import column, delta_to_fraction, to_int_matrix, transpose_cols
+from blaster.reference import _deeplll_local, bkz_reduce
+from blaster.verify import verify_reduction
+from blaster.verify_sage import resolve_gso
 
 
 class TestPruningParams(unittest.TestCase):
@@ -73,6 +77,46 @@ class TestEnumeration(unittest.TestCase):
         sol, norm = enumeration(mu, r, pr, Fraction(1))
         self.assertEqual(norm, Fraction(5, 16))
         self.assertEqual(sol, [-1, 1])
+
+
+def _deeplll4_reference(B0, delta=0.99):
+    B0_rows = to_int_matrix(B0, name="B0")
+    n = len(B0_rows[0])
+    d = delta_to_fraction(delta)
+    cols = [column(B0_rows, j) for j in range(n)]
+    Ucols = [[1 if r == j else 0 for r in range(n)] for j in range(n)]
+    tr = []
+    _deeplll_local(cols, Ucols, 0, n, d, 4, tr, resolve_gso(None))
+    return cols, transpose_cols(Ucols), tr
+
+
+class TestBKZReduce(unittest.TestCase):
+    def test_bkz2_is_deeplll4(self):
+        B0 = [[2, 3, 5], [0, 4, 6], [0, 0, 7]]
+        cols_a, U_a, tr_a = bkz_reduce(B0, beta=2)
+        cols_b, U_b, tr_b = _deeplll4_reference(B0)
+        self.assertEqual(cols_a, cols_b)
+        self.assertEqual(U_a, U_b)
+        self.assertEqual(tr_a, tr_b)
+
+    def test_bkz_tour_verifies(self):
+        B0 = [[2, 3, 5, 7, 11], [0, 4, 6, 8, 10], [0, 0, 7, 9, 12],
+              [0, 0, 0, 11, 13], [0, 0, 0, 0, 17]]
+        cols, U_rows, tr = bkz_reduce(B0, beta=3)
+        rep = verify_reduction(B0, transpose_cols(cols), U_rows, mode="bkz")
+        self.assertTrue(rep.verified)
+
+    def test_hkz_tour_verifies(self):
+        B0 = [[2, 3, 5], [0, 4, 6], [0, 0, 7]]
+        cols, U_rows, tr = bkz_reduce(B0, beta=4)
+        rep = verify_reduction(B0, transpose_cols(cols), U_rows, mode="bkz")
+        self.assertTrue(rep.verified)
+
+    def test_bad_beta_rejected(self):
+        B0 = [[2, 3], [0, 4]]
+        for bad in (1, 81, 3.5, True):
+            with self.assertRaises(ValueError):
+                bkz_reduce(B0, beta=bad)
 
 
 if __name__ == "__main__":

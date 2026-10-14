@@ -7,10 +7,12 @@ two-QR structure is realized by recomputing exact GSO after each committed
 operation; under exact arithmetic this yields the same ``(mu, r)`` exact
 Givens would.
 """
+import math
 from fractions import Fraction
 from functools import cache
 from numbers import Integral
 
+from ._bkz import _safe_gh_squared, enumeration, get_pruning_coefficients
 from ._exact import (
     coerce_int,
     column,
@@ -361,3 +363,78 @@ def lll_reduce_rows(A0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False
     rows = [c[:] for c in cols]  # reduced basis vectors as rows (== B^T)
     T = transpose_cols(U_rows)   # == U^T
     return rows, T, tr
+
+
+def _svp(cols, Ucols, i, w, delta, tr, gso):
+    """Exact transcription of FastInt64 ``svp``: pruned block enumeration.
+
+    Enumerates the ``w``-sublattice at ``b_i..b_{i+w-1}`` under the safe GH
+    radius, inserts a found short vector at ``i`` (one column add + ``j``
+    adjacent swaps), then re-deep-reduces ``[0, min(i+w, n))`` with depth 4.
+    """
+    mu, r = gso(cols)
+    mu_b = [[mu[i + a][i + b] for b in range(w)] for a in range(w)]
+    r_b = [r[i + a] for a in range(w)]
+    log_volume = sum(math.log(float(r[i + a])) for a in range(w))
+    expected = min(Fraction(1023, 1024) * r[i], _safe_gh_squared(w, log_volume))
+    pr = get_pruning_coefficients(w)
+    sol, norm = enumeration(mu_b, r_b, pr, expected)
+    if norm > 0:
+        j = w - 1
+        while j > 0 and sol[j] == 0:
+            j -= 1
+        if j > 0 and sol[j] == -1:
+            for k in range(j + 1):
+                sol[k] = -sol[k]
+        if j > 0 and sol[j] == 1:
+            for k in range(j):
+                if sol[k]:
+                    _add_col(cols, i + k, i + j, sol[k])
+                    _add_col(Ucols, i + k, i + j, sol[k])
+                    tr.append(("add", i + k, i + j, sol[k], "enum"))
+            for p in range(j - 1, -1, -1):
+                _swap_cols(cols, i + p, i + p + 1)
+                _swap_cols(Ucols, i + p, i + p + 1)
+                tr.append(("swap", i + p, i + p + 1))
+    _deeplll_local(cols, Ucols, 0, min(i + w, len(cols)), delta, 4, tr, gso)
+
+
+def _beta_param(beta):
+    if isinstance(beta, bool) or not isinstance(beta, Integral):
+        raise ValueError("beta must be an integer")
+    beta = int(beta)
+    if beta < 2 or beta > 80:
+        raise ValueError("beta must be in [2, 80]")
+    return beta
+
+
+def bkz_reduce(B0, delta=0.99, *, beta, gso=None):
+    """Exact BKZ reduction returning ``(cols, U_rows, transcript)``.
+
+    Pre-reduces the whole basis with deep-LLL-4, then runs a progressive BKZ
+    tour (``svp(i, beta)`` for each block start) or, when ``beta > n``, an HKZ
+    tour (``svp(i, n-i)``). ``beta <= 2`` returns immediately after the
+    pre-reduction (no ``svp`` is called). This never calls Sage ``BKZ``.
+    """
+    B0_rows = to_int_matrix(B0, name="B0")
+    if not full_column_rank(B0_rows):
+        raise ValueError("basis vectors must be linearly independent")
+    n = len(B0_rows[0])
+    d = delta_to_fraction(delta)
+    beta = _beta_param(beta)
+    gso_fn = resolve_gso(gso)
+
+    cols = [column(B0_rows, j) for j in range(n)]
+    Ucols = [[1 if r == j else 0 for r in range(n)] for j in range(n)]
+    tr = []
+
+    _deeplll_local(cols, Ucols, 0, n, d, 4, tr, gso_fn)
+    if beta <= 2:
+        return cols, transpose_cols(Ucols), tr
+    if beta > n:
+        for i in range(n - 1):
+            _svp(cols, Ucols, i, n - i, d, tr, gso_fn)
+    else:
+        for i in range(n - beta + 1):
+            _svp(cols, Ucols, i, beta, d, tr, gso_fn)
+    return cols, transpose_cols(Ucols), tr
