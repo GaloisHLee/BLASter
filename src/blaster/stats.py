@@ -5,6 +5,8 @@ from fractions import Fraction
 from math import exp, gamma, log2, pi
 import numpy as np
 
+from ._matrix import is_sage_matrix
+
 
 def get_profile(basis, is_upper=False, *, gso=None):
     """
@@ -19,8 +21,7 @@ def get_profile(basis, is_upper=False, *, gso=None):
     if is_upper:
         upper = basis
     else:
-        array = np.asarray(basis)
-        if array.dtype.kind == "O":
+        if is_sage_matrix(basis) or np.asarray(basis).dtype.kind == "O":
             return _object_profile(basis, gso=gso)
         upper = np.linalg.qr(basis, mode='r')
     return [log2(abs(d_i)) for d_i in upper.diagonal()]
@@ -40,15 +41,18 @@ def _log2_exact(value):
 
 
 def _object_profile(basis, *, gso=None):
-    """Exact log2 Gram-Schmidt norms of a column-oriented object-dtype basis.
+    """Exact log2 Gram-Schmidt norms of a column-oriented exact basis.
 
     Matches :func:`get_profile` without ``np.linalg.qr``, which cannot handle
-    arbitrary-precision (object-dtype) entries. Uses the exact GSO backend
+    arbitrary-precision (object-dtype) entries. Accepts both NumPy
+    object-dtype arrays and Sage integer matrices, using the exact GSO backend
     selected by ``gso`` (same contract as :func:`blaster.verify.verify_reduction`).
     """
+    from ._exact import column, to_int_matrix
     from .verify_sage import resolve_gso
 
-    columns = [list(basis[:, j]) for j in range(basis.shape[1])]
+    rows = to_int_matrix(basis)
+    columns = [column(rows, j) for j in range(len(rows[0]))]
     _, r = resolve_gso(gso)(columns)
     return [0.5 * _log2_exact(ri) for ri in r]
 
