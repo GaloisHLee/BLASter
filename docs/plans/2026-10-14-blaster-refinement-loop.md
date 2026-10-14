@@ -96,7 +96,7 @@ open one. A `[done]` item is already committed.
 
 ### Track A — Stage 2: segmented LLL reference
 
-- **A-1. `lll_reduce` gains a segment width (`lll_size`).** When `lll_size < rank`,
+- **A-1. `lll_reduce` gains a segment width (`lll_size`).** [done] When `lll_size < rank`,
   partition the columns into disjoint segments and run local-LLL per segment in a
   deterministic sequential order, committing each segment's transform before the next.
   *Acceptance:* on q-ary/random cases with `lll_size < n`, reference output equals
@@ -105,7 +105,7 @@ open one. A `[done]` item is already committed.
   of a parallel algorithm — parallelism is a performance property, not a correctness
   one, and is out of scope for the exact engine.
 
-- **A-2. Alternating-offset toggle, pinned by transcript.** Reproduce the first
+- **A-2. Alternating-offset toggle, pinned by transcript.** [done] Reproduce the first
   half-offset-then-zero sequence from `blaster.py`/`reference.py` and add a direct
   transcript test that asserts the exact offset sequence (not just that a stop happened).
 
