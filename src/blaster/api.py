@@ -28,13 +28,14 @@ def reduce_basis(
     * ``"fast"`` (default) — the C-accelerated FastInt64 engine, which requires
       every entry to fit in signed int64 and computes GSO in binary64.
     * ``"reference"`` — the exact arbitrary-precision BLASter transcription
-      (ordinary LLL only). It accepts entries of any magnitude, supports the
-      ``delta``, ``gso``, ``lll_size`` and ``use_seysen`` parameters, and its third return value
-      is the decision transcript (a list) rather than a ``TimeProfile``. ``gso``
-      selects the exact Gram-Schmidt backend: ``"rational"`` (default) or
-      ``"sage"``. ``lll_size`` is the segment width (default: whole rank);
-      ``use_seysen=True`` selects the recursive Seysen panel instead of
-      classical size reduction.
+      (ordinary or deep LLL). It accepts entries of any magnitude, supports the
+      ``delta``, ``gso``, ``lll_size``, ``use_seysen`` and ``depth`` parameters, and its third
+      return value is the decision transcript (a list) rather than a
+      ``TimeProfile``. ``gso`` selects the exact Gram-Schmidt backend:
+      ``"rational"`` (default) or ``"sage"``. ``lll_size`` is the segment width
+      (default: whole rank); ``use_seysen=True`` selects the recursive Seysen
+      panel instead of classical size reduction; ``depth > 0`` selects the
+      deep-LLL variant (``depth=0`` is ordinary LLL).
 
     When ``return_transform`` is true, return ``(reduced, transform, extra)``.
     For row bases, ``transform @ basis == reduced``. For column bases,
@@ -78,10 +79,11 @@ def _reduce_basis_reference(basis, *, orientation, return_transform, **parameter
     gso = parameters.pop("gso", None)
     lll_size = parameters.pop("lll_size", None)
     use_seysen = parameters.pop("use_seysen", False)
+    depth = parameters.pop("depth", 0)
     if parameters:
         raise ValueError(
-            "reference engine supports only 'delta', 'gso', 'lll_size' and "
-            "'use_seysen', got: " + ", ".join(sorted(parameters))
+            "reference engine supports only 'delta', 'gso', 'lll_size', "
+            "'use_seysen' and 'depth', got: " + ", ".join(sorted(parameters))
         )
 
     sage_input = is_sage_matrix(basis)
@@ -90,11 +92,11 @@ def _reduce_basis_reference(basis, *, orientation, return_transform, **parameter
 
     if orientation == "rows":
         reduced_rows, transform, transcript = lll_reduce_rows(
-            rows, delta=delta, gso=gso, lll_size=lll_size, use_seysen=use_seysen
+            rows, delta=delta, gso=gso, lll_size=lll_size, use_seysen=use_seysen, depth=depth
         )
     else:
         cols, U_rows, transcript = lll_reduce(
-            rows, delta=delta, gso=gso, lll_size=lll_size, use_seysen=use_seysen
+            rows, delta=delta, gso=gso, lll_size=lll_size, use_seysen=use_seysen, depth=depth
         )
         reduced_rows = transpose_cols(cols)
         transform = U_rows

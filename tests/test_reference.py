@@ -220,7 +220,7 @@ class TestTranscript(unittest.TestCase):
         self.assertEqual(tr[-1][0], "offset")
         self.assertTrue(tr[-1][2])     # final iteration reports the stop decision
         for rec in tr:
-            self.assertIn(rec[0], ("add", "swap", "offset", "segment"))
+            self.assertIn(rec[0], ("add", "swap", "offset", "segment", "deep"))
             if rec[0] == "add":
                 self.assertIn(rec[4], ("nearest_core", "nearest_panel"))
 
@@ -398,6 +398,144 @@ class TestInputValidation(unittest.TestCase):
             with self.subTest(delta=ok):
                 cols, U, tr = lll_reduce(CASES["ex3"], delta=ok)
                 self.assertGreater(len(tr), 0)
+
+
+class TestReferenceDeepLll(unittest.TestCase):
+    """C-1: reference ``depth`` transcribes BLASter's DeepLLL.
+
+    ``depth`` truthy swaps ``_local_lll`` for ``_deeplll_local`` inside the
+    segment/offset/panel loop (the panel and weak-LLL stop are unchanged).
+    The reference must reproduce FastInt64 ``reduce(..., depth=...)`` exactly
+    on the DeepLLL corpus, and its transcript must expose the deep-insertion
+    decisions through a ``("deep", i, k)`` marker.
+    """
+
+    # Curated inputs (found by search) on which BLASter's depth predicate
+    # performs at least one *genuine* deep insertion — moving b_k more than
+    # one position — so the trajectory test pins a real deep selection, not a
+    # plain-LLL Lovász cascade.
+    DEEP_CASES = {
+        "d2_n8": np.array(
+            [[14, 15, 7, 9, 14, -15, 5, 0],
+             [14, -1, -5, 8, -12, -10, 5, 1],
+             [7, 2, 11, 8, -12, 7, -6, 0],
+             [-11, 0, -6, -14, 3, -7, -7, -1],
+             [10, -4, 11, -15, -13, -5, -3, -9],
+             [-9, 11, -6, 2, -5, 9, 2, 15],
+             [12, -14, -14, -10, -2, 12, 3, 7],
+             [10, -9, 9, 11, -7, -8, -13, 12]], dtype=np.int64,
+        ),
+        "d3_n7": np.array(
+            [[0, 10, 11, 5, 2, -4, 14],
+             [7, 4, 4, -10, 6, 10, 4],
+             [0, -2, 4, -15, -3, 2, 2],
+             [-7, -1, 14, 13, 13, -10, 3],
+             [1, 11, 3, 3, 0, -10, 14],
+             [13, -3, -8, 4, -8, -10, 5],
+             [6, -10, -12, -15, 1, -2, 2]], dtype=np.int64,
+        ),
+        "d4_n8": np.array(
+            [[-12, 12, 2, -5, 2, -3, -14, 6],
+             [-1, 12, 8, -13, 13, -11, -13, -2],
+             [-2, 14, -11, -4, -13, 15, 6, 9],
+             [-15, 9, -2, 10, 2, 13, 4, -12],
+             [1, 1, 3, -8, -12, 2, 1, -7],
+             [8, 3, -1, 7, -6, -14, -15, 15],
+             [-7, -2, -12, -7, 7, 3, 0, -5],
+             [8, 8, -4, 12, 7, -12, 7, 7]], dtype=np.int64,
+        ),
+    }
+
+    def test_deeplll_matches_fastint64_single_segment(self):
+        for name, A in CASES.items():
+            n = A.shape[1]
+            for depth in (1, 2, 3, 4):
+                with self.subTest(name=name, depth=depth):
+                    U_fast, B_fast, _ = reduce(A, lll_size=n, delta=0.99, cores=1, depth=depth)
+                    cols_ref, U_ref, _ = lll_reduce(A, delta=0.99, depth=depth)
+                    B_ref = np.array(cols_ref, dtype=np.int64).T
+                    np.testing.assert_array_equal(B_ref, B_fast)
+                    np.testing.assert_array_equal(np.array(U_ref, dtype=np.int64), U_fast)
+
+    def test_deeplll_matches_fastint64_segmented(self):
+        for name, A in CASES.items():
+            n = A.shape[1]
+            for lll_size in (2, 3):
+                if lll_size >= n:
+                    continue
+                with self.subTest(name=name, lll_size=lll_size):
+                    U_fast, B_fast, _ = reduce(
+                        A, lll_size=lll_size, delta=0.99, cores=1, depth=2
+                    )
+                    cols_ref, U_ref, _ = lll_reduce(A, delta=0.99, lll_size=lll_size, depth=2)
+                    B_ref = np.array(cols_ref, dtype=np.int64).T
+                    np.testing.assert_array_equal(B_ref, B_fast)
+                    np.testing.assert_array_equal(np.array(U_ref, dtype=np.int64), U_fast)
+
+    def test_curated_deep_insertions_match_and_verify(self):
+        for name, A in self.DEEP_CASES.items():
+            depth = {"d2_n8": 2, "d3_n7": 3, "d4_n8": 4}[name]
+            with self.subTest(name=name):
+                n = A.shape[1]
+                U_fast, B_fast, _ = reduce(A, lll_size=n, delta=0.99, cores=1, depth=depth)
+                cols_ref, U_ref, _ = lll_reduce(A, delta=0.99, depth=depth)
+                B_ref = np.array(cols_ref, dtype=np.int64).T
+                np.testing.assert_array_equal(B_ref, B_fast)
+                np.testing.assert_array_equal(np.array(U_ref, dtype=np.int64), U_fast)
+                rep = verify_reduction(A, B_ref, np.array(U_ref, dtype=np.int64), delta=0.99)
+                self.assertTrue(rep.verified, name)
+
+    def test_depth_zero_equals_plain_lll(self):
+        for name, A in CASES.items():
+            with self.subTest(name=name):
+                cols_plain, U_plain, tr_plain = lll_reduce(A, delta=0.99)
+                cols_zero, U_zero, tr_zero = lll_reduce(A, delta=0.99, depth=0)
+                self.assertEqual(cols_plain, cols_zero)
+                self.assertEqual(U_plain, U_zero)
+                self.assertEqual(tr_plain, tr_zero)
+
+    def test_depth_validation(self):
+        with self.assertRaisesRegex(ValueError, "depth must be an integer"):
+            lll_reduce(CASES["ex3"], delta=0.99, depth=True)
+        with self.assertRaisesRegex(ValueError, "depth must be an integer"):
+            lll_reduce(CASES["ex3"], delta=0.99, depth=1.5)
+        with self.assertRaisesRegex(ValueError, "depth must be at least 0"):
+            lll_reduce(CASES["ex3"], delta=0.99, depth=-1)
+
+    def test_reduce_basis_reference_accepts_depth(self):
+        from blaster.api import reduce_basis
+        A = CASES["rand4"]
+        cols, U, _ = lll_reduce(A, delta=0.99, depth=2)
+        red, transform, transcript = reduce_basis(
+            A, orientation="columns", engine="reference",
+            delta=0.99, depth=2, return_transform=True,
+        )
+        np.testing.assert_array_equal(
+            np.array(red, dtype=object), np.array(cols, dtype=object).T
+        )
+        np.testing.assert_array_equal(
+            np.array(transform, dtype=object), np.array(U, dtype=object)
+        )
+
+    def test_transcript_pins_deep_insertion(self):
+        """The trajectory exposes a genuine multi-position deep insertion."""
+        A = self.DEEP_CASES["d3_n7"]
+        depth, n = 3, A.shape[1]
+        cols_ref, U_ref, tr = lll_reduce(A, delta=0.99, depth=depth)
+        deeps = [rec for rec in tr if rec[0] == "deep"]
+        self.assertTrue(deeps, "expected at least one deep-insertion record")
+        self.assertTrue(
+            any(k - i >= 2 for (_, i, k) in deeps),
+            "expected a deep insertion moving b_k more than one position",
+        )
+        for (_, i, k) in deeps:
+            self.assertLess(i, k)
+            self.assertLess(k, n)
+        # the pinned trajectory replays to the FastInt64 DeepLLL basis exactly
+        U_fast, B_fast, _ = reduce(A, lll_size=n, delta=0.99, cores=1, depth=depth)
+        B_ref = np.array(cols_ref, dtype=np.int64).T
+        np.testing.assert_array_equal(B_ref, B_fast)
+        np.testing.assert_array_equal(np.array(U_ref, dtype=np.int64), U_fast)
 
 
 class TestRowConvention(unittest.TestCase):

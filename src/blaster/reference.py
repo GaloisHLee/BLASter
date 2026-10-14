@@ -9,6 +9,7 @@ Givens would.
 """
 from fractions import Fraction
 from functools import cache
+from numbers import Integral
 
 from ._exact import (
     coerce_int,
@@ -60,6 +61,51 @@ def _local_lll(cols, Ucols, start, end, delta, tr, gso):
             tr.append(("swap", k - 1, k))
             if k > start + 1:
                 k -= 1
+
+
+def _deeplll_local(cols, Ucols, start, end, delta, depth, tr, gso):
+    """Depth-deep-LLL over ``[start, end)``: local LLL then deep insertions.
+
+    Transcribes FastInt64 ``_deeplll_reduce``: after ``_local_lll``, walk
+    ``k`` and deep-insert ``b_k`` at the earliest ``i < k`` satisfying the
+    depth predicate ``(i < depth or i >= k - depth)`` and
+    ``||pi_i(b_k)||^2 <= delta * ||b_i*||^2``, via adjacent swaps. The
+    ``("deep", i, k)`` record (global indices) marks the decision; the actual
+    column movement is the following ``("swap", ...)`` run.
+    """
+    _local_lll(cols, Ucols, start, end, delta, tr, gso)
+    k = 1
+    while k < end - start:
+        mu, r = gso(cols)
+        for i in range(k - 1, -1, -1):
+            z = nearest_core(-mu[start + i][start + k])
+            if z:
+                _add_col(cols, start + i, start + k, z)
+                _add_col(Ucols, start + i, start + k, z)
+                tr.append(("add", start + i, start + k, z, "nearest_core"))
+                mu, r = gso(cols)
+        mu, r = gso(cols)
+        # ||b_k||^2 = r[k] + sum_{t<k} mu[t][k]^2 r[t]: rational_gso sets
+        # mu[k][k] = 0, so the diagonal term is r[k] itself.
+        proj = r[start + k] + sum(
+            mu[start + t][start + k] ** 2 * r[start + t] for t in range(k)
+        )
+        swapped = False
+        for i in range(k):
+            if (i < depth or i >= k - depth) and proj <= delta * r[start + i]:
+                tr.append(("deep", start + i, start + k))
+                while k > i:
+                    _swap_cols(cols, start + k - 1, start + k)
+                    _swap_cols(Ucols, start + k - 1, start + k)
+                    tr.append(("swap", start + k - 1, start + k))
+                    k -= 1
+                if k == 0:
+                    k += 1
+                swapped = True
+                break
+            proj -= mu[start + i][start + k] ** 2 * r[start + i]
+        if not swapped:
+            k += 1
 
 
 def _size_panel(cols, Ucols, tr, gso):
@@ -199,7 +245,21 @@ def _segment_width(lll_size, n):
     return min(w, n)
 
 
-def lll_reduce(B0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False):
+def _depth_param(depth):
+    """Validate ``depth`` exactly as the FastInt64 engine does.
+
+    ``bool`` and non-integral values are rejected (``Integral`` covers both
+    Python ``int`` and Sage ``Integer``); the value is then range-checked.
+    """
+    if isinstance(depth, bool) or not isinstance(depth, Integral):
+        raise ValueError("depth must be an integer")
+    depth = int(depth)
+    if depth < 0:
+        raise ValueError("depth must be at least 0")
+    return depth
+
+
+def lll_reduce(B0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False, depth=0):
     """Exact segmented-LLL returning ``(cols, U_rows, transcript)``.
 
     ``B0`` is a matrix whose columns are basis vectors (nested lists, NumPy
@@ -218,6 +278,11 @@ def lll_reduce(B0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False):
     ``gram_schmidt``, or a callable returning ``(mu, r)``. The algorithm itself
     is unchanged — only the exact GSO backend is swapped, and it never calls
     Sage ``LLL``/``BKZ``.
+
+    ``depth`` (default ``0``) selects the deep-LLL variant: when truthy, each
+    segment is reduced by :func:`_deeplll_local` (local LLL followed by deep
+    insertions) instead of :func:`_local_lll`. ``depth=0`` is exactly ordinary
+    segmented LLL.
     """
     B0_rows = to_int_matrix(B0, name="B0")
     if not full_column_rank(B0_rows):
@@ -227,6 +292,7 @@ def lll_reduce(B0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False):
     d = delta_to_fraction(delta)
     gso_fn = resolve_gso(gso)
     block = _segment_width(lll_size, n)
+    depth = _depth_param(depth)
 
     cols = [column(B0_rows, j) for j in range(n)]
     Ucols = [[1 if r == j else 0 for r in range(n)] for j in range(n)]
@@ -242,7 +308,10 @@ def lll_reduce(B0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False):
         for i in range(offset, n, block):
             w = min(i + block, n) - i
             tr.append(("segment", i, w))
-            _local_lll(cols, Ucols, i, min(i + block, n), d, tr, gso_fn)
+            if depth:
+                _deeplll_local(cols, Ucols, i, min(i + block, n), d, depth, tr, gso_fn)
+            else:
+                _local_lll(cols, Ucols, i, min(i + block, n), d, tr, gso_fn)
         (_seysen_panel if use_seysen else _size_panel)(cols, Ucols, tr, gso_fn)
         mu, r = gso_fn(cols)
         if weak_lll_holds(mu, r, d):
@@ -252,17 +321,19 @@ def lll_reduce(B0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False):
     return cols, transpose_cols(Ucols), tr
 
 
-def lll_reduce_rows(A0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False):
+def lll_reduce_rows(A0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False, depth=0):
     """Row-convention entry point: ``A0`` rows are the basis vectors.
 
     Returns ``(rows, T, transcript)`` with ``T @ A0 == rows``. This is the
     transpose of the column convention: reduce ``A0^T``, then transpose the
     reduced basis and the transform back (``rows == B^T``, ``T == U^T``).
-    ``gso`` and ``lll_size`` are forwarded to :func:`lll_reduce`.
+    ``gso``, ``lll_size``, ``use_seysen`` and ``depth`` are forwarded to
+    :func:`lll_reduce`.
     """
     A0_rows = to_int_matrix(A0, name="A0")
     cols, U_rows, tr = lll_reduce(
-        transpose_cols(A0_rows), delta, gso=gso, lll_size=lll_size, use_seysen=use_seysen
+        transpose_cols(A0_rows), delta, gso=gso, lll_size=lll_size,
+        use_seysen=use_seysen, depth=depth,
     )
     rows = [c[:] for c in cols]  # reduced basis vectors as rows (== B^T)
     T = transpose_cols(U_rows)   # == U^T
