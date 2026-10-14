@@ -51,6 +51,28 @@ class LatticeIoTests(unittest.TestCase):
         with self.assertRaisesRegex(OverflowError, "int64"):
             parse_lattice(f"[[{2**63} 0] [0 1]]", qary_order=False)
 
+    def test_parse_lattice_exact_preserves_arbitrary_precision_entries(self):
+        big = 1 << 70  # exceeds signed int64
+        actual = parse_lattice(f"[[{big} 1] [2 3]]", qary_order=False, exact=True)
+        self.assertEqual(actual.dtype, object)
+        expected = np.array([[big, 2], [1, 3]], dtype=object)  # column-oriented
+        np.testing.assert_array_equal(actual, expected)
+
+    def test_write_lattice_exact_round_trips_arbitrary_precision_entries(self):
+        big = 1 << 70
+        basis = np.array([[big, 1], [2, 3]], dtype=object)  # column-oriented
+        stream = io.StringIO()
+        write_lattice(basis, stream, exact=True)
+        stream.seek(0)
+        actual = read_lattice(stream, qary_order=False, exact=True)
+        np.testing.assert_array_equal(actual, basis)
+
+    def test_write_lattice_default_rejects_out_of_range_entries(self):
+        big = 1 << 70
+        basis = np.array([[big, 1], [2, 3]], dtype=object)
+        with self.assertRaisesRegex(OverflowError, "int64"):
+            write_lattice(basis, io.StringIO())
+
 
 class CommandLineTests(unittest.TestCase):
     def setUp(self):

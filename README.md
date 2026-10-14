@@ -221,6 +221,20 @@ Use `conda run -n sage106 blaster --help` for the complete parameter list.
 Invalid matrices, non-integer or out-of-range entries, incompatible options, and
 unsupported BKZ block sizes are reported as CLI errors without a traceback.
 
+The Python I/O layer under the CLI (`blaster.lattice_io`) reads and writes
+fplll matrix syntax. By default `parse_lattice`, `read_lattice`, and
+`write_lattice` use int64 storage and reject out-of-range entries; pass
+`exact=True` to read or write entries of any magnitude as exact Python
+integers:
+
+```python
+from blaster.lattice_io import parse_lattice, write_lattice
+
+big = 1 << 70  # exceeds int64
+basis = parse_lattice(f"[[{big} 1] [2 3]]", qary_order=False, exact=True)
+write_lattice(basis, exact=True)  # round-trips without overflow
+```
+
 ## Tests
 
 ```console
