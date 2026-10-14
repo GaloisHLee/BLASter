@@ -116,7 +116,7 @@ open one. A `[done]` item is already committed.
 
 ### Track B — Stage 3: Seysen panel reference
 
-- **B-1. Reference Seysen panel.** Transcribe the recursive Seysen panel (two-column
+- **B-1. Reference Seysen panel.** [done] Transcribe the recursive Seysen panel (two-column
   Seysen leaf + rounded-inverse cross-panel) in exact `Fraction`, threaded through
   `lll_reduce` as a panel selector. *Acceptance:* matches FastInt64 Seysen output on the
   Seysen q-ary corpus, certified by `verify_reduction`.
