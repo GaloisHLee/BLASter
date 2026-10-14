@@ -191,7 +191,13 @@ The remaining "coverage gaps that gate a reference implementation" are FastInt64
   against hand-derived exact GSO on full 3x3 bases (boundary 1/2, lone 3/4,
   negative -3/4); verifier isolates the gate from weak-LLL (commit `ae54e56`).
 - **F-4. Direct offset / reduction-tree / front-tour / progressive-beta schedule** tests
-  (overlaps A-2/D-1; do the reference-side versions first).
+  (overlaps A-2/D-1; do the reference-side versions first). `[done]` —
+  `TestReductionTreeSchedule` pins `__reduction_ranges`/`__babai_ranges`/
+  `_reduction_ranges` at their coverage contract (every column pair covered)
+  + golden output (n=1..9) + structural validity (n=1..80) + reference==FastInt64;
+  `TestFrontTourSchedule` extracts `_advance_front` from `bkz_reduce` and pins
+  the strict-overrun wrap boundary (`cur_front + beta > n`; `== n` advances)
+  (commit `804cc10`).
 
 ## 6. Per-tick protocol
 
