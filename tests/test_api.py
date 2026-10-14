@@ -189,6 +189,20 @@ class ReferenceEngineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "delta"):
             reduce_basis([[1, 0], [0, 1]], engine="reference", cores=4)
 
+    def test_reference_engine_accepts_gso_selector(self):
+        rows = [[10, 0, 0], [1, 10, 0], [0, 1, 1]]
+        red_def, T_def, tr_def = reduce_basis(rows, engine="reference", return_transform=True)
+        red_exp, T_exp, tr_exp = reduce_basis(
+            rows, engine="reference", gso="rational", return_transform=True
+        )
+        np.testing.assert_array_equal(red_def, red_exp)
+        np.testing.assert_array_equal(T_def, T_exp)
+        self.assertEqual(tr_def, tr_exp)
+
+    def test_reference_engine_rejects_invalid_gso(self):
+        with self.assertRaisesRegex(ValueError, "gso"):
+            reduce_basis([[1, 0], [0, 1]], engine="reference", gso="numpy")
+
     def test_reference_engine_rejects_invalid_engine(self):
         with self.assertRaisesRegex(ValueError, "engine"):
             reduce_basis([[1, 0], [0, 1]], engine="quantum")

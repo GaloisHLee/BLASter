@@ -28,9 +28,11 @@ def reduce_basis(
     * ``"fast"`` (default) — the C-accelerated FastInt64 engine, which requires
       every entry to fit in signed int64 and computes GSO in binary64.
     * ``"reference"`` — the exact arbitrary-precision BLASter transcription
-      (ordinary LLL only). It accepts entries of any magnitude, supports only
-      the ``delta`` parameter, and its third return value is the decision
-      transcript (a list) rather than a ``TimeProfile``.
+      (ordinary LLL only). It accepts entries of any magnitude, supports the
+      ``delta`` and ``gso`` parameters, and its third return value is the
+      decision transcript (a list) rather than a ``TimeProfile``. ``gso``
+      selects the exact Gram-Schmidt backend: ``"rational"`` (default) or
+      ``"sage"``.
 
     When ``return_transform`` is true, return ``(reduced, transform, extra)``.
     For row bases, ``transform @ basis == reduced``. For column bases,
@@ -71,9 +73,11 @@ def reduce_basis(
 def _reduce_basis_reference(basis, *, orientation, return_transform, **parameters):
     """Exact arbitrary-precision LLL path of :func:`reduce_basis`."""
     delta = parameters.pop("delta", 0.99)
+    gso = parameters.pop("gso", None)
     if parameters:
         raise ValueError(
-            "reference engine supports only 'delta', got: " + ", ".join(sorted(parameters))
+            "reference engine supports only 'delta' and 'gso', got: "
+            + ", ".join(sorted(parameters))
         )
 
     sage_input = is_sage_matrix(basis)
@@ -81,9 +85,9 @@ def _reduce_basis_reference(basis, *, orientation, return_transform, **parameter
     rows = to_int_matrix(basis, name="basis")
 
     if orientation == "rows":
-        reduced_rows, transform, transcript = lll_reduce_rows(rows, delta=delta)
+        reduced_rows, transform, transcript = lll_reduce_rows(rows, delta=delta, gso=gso)
     else:
-        cols, U_rows, transcript = lll_reduce(rows, delta=delta)
+        cols, U_rows, transcript = lll_reduce(rows, delta=delta, gso=gso)
         reduced_rows = transpose_cols(cols)
         transform = U_rows
 

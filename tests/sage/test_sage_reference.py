@@ -64,6 +64,15 @@ class TestReduceBasisSageType(unittest.TestCase):
         self.assertTrue(type(B_red).__module__.startswith("sage."))
         self.assertTrue(type(T).__module__.startswith("sage."))
 
+    def test_reduce_basis_reference_gso_sage_matches_default(self):
+        A = matrix(ZZ, [[10, 0, 0], [1, 10, 0], [0, 1, 1]])
+        red_def, T_def, _ = reduce_basis(A, engine="reference", return_transform=True)
+        red_sage, T_sage, _ = reduce_basis(
+            A, engine="reference", gso="sage", return_transform=True
+        )
+        self.assertEqual(red_def, red_sage)
+        self.assertEqual(T_def, T_sage)
+
 
 class TestReferenceGsoBackend(unittest.TestCase):
     """The reference reducer's ``gso`` backend is a drop-in exact primitive."""
