@@ -230,6 +230,17 @@ class CommandLineTests(unittest.TestCase):
         self.assertIn("RHF =", result.stderr)
         self.assertIn("slope =", result.stderr)
 
+    def test_cli_reference_engine_rejects_unsupported_output_options(self):
+        for flag in ("--anim", "--logfile"):
+            with self.subTest(flag=flag):
+                result = self.run_cli(
+                    "--engine", "reference", flag, "out.tmp",
+                    input_text="[[10 0 0] [1 10 0] [0 1 1]]",
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("reference", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
     def test_cli_reference_engine_verbose_reports_expected_quality(self):
         big = 1 << 70
         source = io.StringIO()

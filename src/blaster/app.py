@@ -167,9 +167,9 @@ def _run_reference(args):
     """Exact arbitrary-precision LLL path for the ``--engine reference`` CLI.
 
     The reference engine performs ordinary LLL only, so DeepLLL/BKZ shaping
-    options are rejected. Profile and expected-quality output are computed from
-    the exact Gram-Schmidt norms (``--anim``/``--logfile`` are not emitted, as
-    they depend on ``np.linalg.qr``, which cannot handle object-dtype arrays).
+    options and ``--anim``/``--logfile`` are rejected. Profile and
+    expected-quality output are computed from the exact Gram-Schmidt norms
+    rather than ``np.linalg.qr`` (which cannot handle object-dtype arrays).
     """
     if (
         args.depth > 0
@@ -180,6 +180,11 @@ def _run_reference(args):
         raise ValueError(
             "reference engine supports ordinary LLL only (delta and gso); "
             "DeepLLL/BKZ options are not supported"
+        )
+    if args.anim is not None or args.logfile is not None:
+        raise ValueError(
+            "reference engine does not support --anim or --logfile; "
+            "they require the fast engine's profile output"
         )
 
     basis = read_qary_lattice(args.input, exact=True)
