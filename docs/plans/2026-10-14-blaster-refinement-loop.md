@@ -180,7 +180,9 @@ The remaining "coverage gaps that gate a reference implementation" are FastInt64
 *test* gaps, not reference-engine gaps. Pick them off one at a time, lowest-risk first:
 
 - **F-1. Transactional checked-int64 overflow tests** for column addition and matrix
-  product shapes.
+  product shapes. `[done]` — `matmul_columns` (test_exact.py) and
+  `_add_col`/`_matmul` (test_reference.py) pinned against hand-derived `2**80`
+  closed forms across shapes (commit `e611a94`).
 - **F-2. Explicit normal-vs-partial (`KeyboardInterrupt`) completion status** test.
 - **F-3. Definition-level classical size-reduction postcondition** test.
 - **F-4. Direct offset / reduction-tree / front-tour / progressive-beta schedule** tests
