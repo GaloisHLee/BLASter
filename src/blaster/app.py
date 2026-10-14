@@ -153,8 +153,8 @@ def _run(args):
 def _run_reference(args):
     """Exact arbitrary-precision LLL path for the ``--engine reference`` CLI.
 
-    The reference engine performs ordinary LLL only, so DeepLLL/BKZ shaping
-    options and ``--anim``/``--logfile`` are rejected. Profile and
+    The reference engine performs ordinary LLL only, so segmentation,
+    DeepLLL/BKZ shaping options, and ``--anim``/``--logfile`` are rejected. Profile and
     expected-quality output are computed from the exact Gram-Schmidt norms
     rather than ``np.linalg.qr`` (which cannot handle object-dtype arrays).
     """
@@ -163,10 +163,12 @@ def _run_reference(args):
         or args.beta is not None
         or args.bkz_size is not None
         or args.bkz_prog is not None
+        or args.lll_size != 64
+        or args.bkz_tours != 8
     ):
         raise ValueError(
             "reference engine supports ordinary LLL only (delta and gso); "
-            "DeepLLL/BKZ options are not supported"
+            "segmentation, DeepLLL, and BKZ options are not supported"
         )
     if args.anim is not None or args.logfile is not None:
         raise ValueError(

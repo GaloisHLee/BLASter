@@ -211,6 +211,17 @@ class CommandLineTests(unittest.TestCase):
         self.assertIn("reference", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
 
+    def test_cli_reference_engine_rejects_segmentation_and_tour_flags(self):
+        for flag in ("--lll-size", "--bkz-tours"):
+            with self.subTest(flag=flag):
+                result = self.run_cli(
+                    "--engine", "reference", flag, "3",
+                    input_text="[[10 0 0] [1 10 0] [0 1 1]]",
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("reference", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
     def test_cli_reference_engine_profiles_huge_basis(self):
         big = 1 << 2000  # exceeds the float64 range np.linalg.qr coerces to
         source = io.StringIO()
