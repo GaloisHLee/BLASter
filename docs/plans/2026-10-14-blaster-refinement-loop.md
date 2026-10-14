@@ -185,7 +185,11 @@ The remaining "coverage gaps that gate a reference implementation" are FastInt64
   closed forms across shapes (commit `e611a94`).
 - **F-2. Explicit normal-vs-partial (`KeyboardInterrupt`) completion status** test.
   `[done]` — `TimeProfile.interrupted` flag + `CompletionStatusTests` (commit `357ed72`).
-- **F-3. Definition-level classical size-reduction postcondition** test.
+- **F-3. Definition-level classical size-reduction postcondition** test. `[done]`
+  — `TestClassicalSizeReductionDefinition` (test_exact.py) + two verifier
+  postcondition tests (test_verifier.py) pin `|mu[i][j]| <= 1/2` for all `i<j`
+  against hand-derived exact GSO on full 3x3 bases (boundary 1/2, lone 3/4,
+  negative -3/4); verifier isolates the gate from weak-LLL (commit `ae54e56`).
 - **F-4. Direct offset / reduction-tree / front-tour / progressive-beta schedule** tests
   (overlaps A-2/D-1; do the reference-side versions first).
 
