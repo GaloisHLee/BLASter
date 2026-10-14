@@ -38,6 +38,10 @@ class TestStructuralChecks(unittest.TestCase):
         with self.assertRaises(VerificationFailed):
             verify_reduction(I2, B, I2, delta=0.99)
 
+    def test_delta_out_of_range_raises(self):
+        with self.assertRaises(ValueError):
+            verify_reduction(I2, I2, I2, delta=1.0)
+
     def test_accepts_numpy_inputs(self):
         a = np.array([[10, 0, 0], [1, 10, 0], [0, 1, 1]], dtype=np.int64)
         rep = verify_reduction(a, a, np.eye(3, dtype=np.int64), delta=0.99)

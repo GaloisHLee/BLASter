@@ -6,6 +6,8 @@ column convention: columns are basis vectors and ``B0 * U == B``.
 """
 import operator
 from fractions import Fraction
+from math import isfinite
+from numbers import Real
 
 from ._matrix import is_sage_matrix
 
@@ -126,8 +128,17 @@ def matmul_columns(B0_rows, U_rows):
 
 
 def delta_to_fraction(delta):
-    """Normalize ``delta`` to the exact dyadic rational of its binary64 value."""
-    return Fraction(*float(delta).as_integer_ratio())
+    """Normalize ``delta`` to the exact dyadic rational of its binary64 value.
+
+    Mirrors the FastInt64 engine's validation: reject bools, non-real, and
+    non-finite values, then enforce the LLL Lovász range ``0.25 < delta < 1``.
+    """
+    if isinstance(delta, bool) or not isinstance(delta, Real) or not isfinite(float(delta)):
+        raise ValueError("delta must be a finite real number")
+    d = float(delta)
+    if not 0.25 < d < 1.0:
+        raise ValueError("delta must satisfy 0.25 < delta < 1.0")
+    return Fraction(*d.as_integer_ratio())
 
 
 def rational_gso(cols):

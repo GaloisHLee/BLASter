@@ -161,5 +161,49 @@ class TestTranscript(unittest.TestCase):
                 self.assertIn(rec[4], ("nearest_core", "nearest_panel"))
 
 
+class TestInputValidation(unittest.TestCase):
+    """M-2/M-3: the exact reducer rejects invalid input with a clean error."""
+
+    def test_rank_deficient_raises_clean_error(self):
+        B0 = [[1, 2], [2, 4]]  # columns (1,2),(2,4) are dependent
+        with self.assertRaises(ValueError) as cm:
+            lll_reduce(B0, delta=0.99)
+        self.assertIn("linearly independent", str(cm.exception))
+
+    def test_delta_out_of_range_raises(self):
+        for bad in (0.25, 1.0, 0.1, 2.0):
+            with self.subTest(delta=bad):
+                with self.assertRaises(ValueError):
+                    lll_reduce(CASES["ex3"], delta=bad)
+
+    def test_delta_bool_rejected(self):
+        with self.assertRaises(ValueError):
+            lll_reduce(CASES["ex3"], delta=True)
+
+    def test_delta_in_range_accepted(self):
+        for ok in (0.5, 0.99):
+            with self.subTest(delta=ok):
+                cols, U, tr = lll_reduce(CASES["ex3"], delta=ok)
+                self.assertGreater(len(tr), 0)
+
+
+class TestRowConvention(unittest.TestCase):
+    """M-4: row-oriented entry to the exact reference reducer."""
+
+    def test_lll_reduce_rows_matches_column(self):
+        from blaster.reference import lll_reduce_rows
+        A0 = CASES["ex3"]  # rows are the basis vectors
+        rows, T, tr = lll_reduce_rows(A0, delta=0.99)
+        # Row convention: T @ A0 == rows.
+        np.testing.assert_array_equal(
+            np.array(T, dtype=object) @ np.array(A0, dtype=object),
+            np.array(rows, dtype=object),
+        )
+        # Its transpose is the column-convention reduction of A0.T, and it verifies.
+        rep = verify_reduction(A0.T, np.array(rows, dtype=object).T,
+                               np.array(T, dtype=object).T, delta=0.99)
+        self.assertTrue(rep.verified)
+
+
 if __name__ == "__main__":
     unittest.main()

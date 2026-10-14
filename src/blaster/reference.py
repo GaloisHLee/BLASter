@@ -9,6 +9,7 @@ arithmetic this yields the same ``(mu, r)`` exact Givens would.
 from ._exact import (
     column,
     delta_to_fraction,
+    full_column_rank,
     nearest_core,
     nearest_panel,
     rational_gso,
@@ -79,6 +80,8 @@ def lll_reduce(B0, delta=0.99):
     transcript.
     """
     B0_rows = to_int_matrix(B0, name="B0")
+    if not full_column_rank(B0_rows):
+        raise ValueError("basis vectors must be linearly independent")
     m = len(B0_rows)
     n = len(B0_rows[0])
     d = delta_to_fraction(delta)
@@ -102,3 +105,17 @@ def lll_reduce(B0, delta=0.99):
             break
 
     return cols, transpose_cols(Ucols), tr
+
+
+def lll_reduce_rows(A0, delta=0.99):
+    """Row-convention entry point: ``A0`` rows are the basis vectors.
+
+    Returns ``(rows, T, transcript)`` with ``T @ A0 == rows``. This is the
+    transpose of the column convention: reduce ``A0^T``, then transpose the
+    reduced basis and the transform back (``rows == B^T``, ``T == U^T``).
+    """
+    A0_rows = to_int_matrix(A0, name="A0")
+    cols, U_rows, tr = lll_reduce(transpose_cols(A0_rows), delta)
+    rows = [c[:] for c in cols]  # reduced basis vectors as rows (== B^T)
+    T = transpose_cols(U_rows)   # == U^T
+    return rows, T, tr
