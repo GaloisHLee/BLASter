@@ -128,7 +128,7 @@ open one. A `[done]` item is already committed.
 
 ### Track C — Stage 4: DeepLLL reference
 
-- **C-1. Reference DeepLLL.** Transcribe `deeplll_reduce`'s implemented depth predicate
+- **C-1. Reference DeepLLL.** [done] Transcribe `deeplll_reduce`'s implemented depth predicate
   (`(i < depth || i >= k-depth)`) and adjacent-swap deep insertion. *Acceptance:* matches
   FastInt64 DeepLLL on the DeepLLL corpus; a transcript test pins the local depth-selection
   trajectory.
