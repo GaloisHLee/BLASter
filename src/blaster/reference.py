@@ -7,6 +7,9 @@ two-QR structure is realized by recomputing exact GSO after each committed
 operation; under exact arithmetic this yields the same ``(mu, r)`` exact
 Givens would.
 """
+from fractions import Fraction
+from functools import cache
+
 from ._exact import (
     coerce_int,
     column,
@@ -73,6 +76,113 @@ def _size_panel(cols, Ucols, tr, gso):
                 mu, r = gso(cols)
 
 
+def _matmul(A, B):
+    """Exact matrix product of two lists of rows."""
+    ra, ca = len(A), len(A[0])
+    rb, cb = len(B), len(B[0])
+    if ca != rb:
+        raise ValueError("matrix dimension mismatch")
+    return [
+        [sum(A[i][t] * B[t][j] for t in range(ca)) for j in range(cb)]
+        for i in range(ra)
+    ]
+
+
+def _solve_unit_upper(M, X):
+    """Solve ``M * Y == X`` for a unit upper-triangular ``M`` by back-substitution.
+
+    The unit diagonal means no division is needed; ``Y = M^{-1} X`` is computed
+    exactly over :class:`fractions.Fraction`.
+    """
+    m = len(M)
+    Y = [row[:] for row in X]
+    for i in range(m - 1, -1, -1):
+        for t in range(i + 1, m):
+            if M[i][t]:
+                for j in range(len(X[0])):
+                    Y[i][j] -= M[i][t] * Y[t][j]
+    return Y
+
+
+@cache
+def _reduction_ranges(n):
+    """Non-recursive port of FastInt64 ``size_reduction.__reduction_ranges``.
+
+    Returns ``(base_cases, ranges)``: ``base_cases`` lists indices ``i`` whose
+    pair ``(i, i+1)`` forms a two-column Seysen leaf, and ``ranges`` lists the
+    ``(i, j, k)`` triples where ``[j:k)`` is Seysen-reduced against ``[i:j)``.
+    """
+    bit_shift, parts, result, base_cases = 1, 1, [], []
+    while parts < n:
+        left_bound, left_idx = 0, 0
+        for i in range(1, parts + 1):
+            right_bound = left_bound + 2 * n
+            mid_idx = (left_bound + n) >> bit_shift
+            right_idx = right_bound >> bit_shift
+            if right_idx > left_idx + 1:
+                if right_idx == left_idx + 2:
+                    base_cases.append(left_idx)
+                else:
+                    result.append((left_idx, mid_idx, right_idx))
+            left_bound, left_idx = right_bound, right_idx
+        parts *= 2
+        bit_shift += 1
+    return base_cases, list(reversed(result))
+
+
+def _seysen_panel(cols, Ucols, tr, gso):
+    """Recursive Seysen panel (two-column leaf + rounded-inverse cross-panel).
+
+    Transcribes FastInt64 ``seysen_reduce`` exactly, on the unit-upper-triangular
+    matrix ``M`` (``M[a][b] = mu[a][b]`` for ``a < b``) rather than on the QR
+    factor ``R = D * M``. ``D = diag(sqrt(r_i))`` is invariant under Seysen
+    (adding lower-index columns to higher ones preserves every ``b*_i``), so it
+    cancels out of every rounding decision and every in-place update. As in the
+    FastInt64 engine, a base case writes only ``M[i][i+1]`` and leaves
+    ``M[l][i+1]`` (``l < i``) stale for the cross-panel ranges; the transform is
+    accumulated in ``U`` and applied to the columns once, at the end.
+    """
+    n = len(cols)
+    mu, _ = gso(cols)
+    M = [
+        [Fraction(1) if a == b else (mu[a][b] if a < b else Fraction(0)) for b in range(n)]
+        for a in range(n)
+    ]
+    U = [[Fraction(1) if a == b else Fraction(0) for b in range(n)] for a in range(n)]
+
+    base_cases, ranges = _reduction_ranges(n)
+    for i in base_cases:
+        z = nearest_panel(-M[i][i + 1])
+        U[i][i + 1] = z
+        M[i][i + 1] += z
+    for (i, j, k) in ranges:
+        M11 = [row[i:j] for row in M[i:j]]
+        M12 = [row[j:k] for row in M[i:j]]
+        U22 = [row[j:k] for row in U[j:k]]
+        U11 = [row[i:j] for row in U[i:j]]
+        M12 = _matmul(M12, U22)                                       # S12' = M12 * U22
+        X = _solve_unit_upper(M11, [[-x for x in row] for row in M12])  # -M11^{-1} * M12
+        U12p = [[nearest_panel(x) for x in row] for row in X]
+        M12 = [
+            [M12[a][b] + v for b, v in enumerate(row)]
+            for a, row in enumerate(_matmul(M11, U12p))
+        ]                                                            # S12 = S12' + M11 * U12p
+        U12 = _matmul(U11, U12p)
+        for a in range(j - i):
+            for b in range(k - j):
+                M[i + a][j + b] = M12[a][b]
+                U[i + a][j + b] = U12[a][b]
+
+    for b in range(n - 1, -1, -1):
+        for a in range(b):
+            z = U[a][b]
+            if z:
+                zz = int(z)
+                _add_col(cols, a, b, zz)
+                _add_col(Ucols, a, b, zz)
+                tr.append(("add", a, b, zz, "nearest_panel"))
+
+
 def _segment_width(lll_size, n):
     """Normalize ``lll_size`` to an effective segment width in ``[2, n]``.
 
@@ -89,7 +199,7 @@ def _segment_width(lll_size, n):
     return min(w, n)
 
 
-def lll_reduce(B0, delta=0.99, *, gso=None, lll_size=None):
+def lll_reduce(B0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False):
     """Exact segmented-LLL returning ``(cols, U_rows, transcript)``.
 
     ``B0`` is a matrix whose columns are basis vectors (nested lists, NumPy
@@ -133,7 +243,7 @@ def lll_reduce(B0, delta=0.99, *, gso=None, lll_size=None):
             w = min(i + block, n) - i
             tr.append(("segment", i, w))
             _local_lll(cols, Ucols, i, min(i + block, n), d, tr, gso_fn)
-        _size_panel(cols, Ucols, tr, gso_fn)
+        (_seysen_panel if use_seysen else _size_panel)(cols, Ucols, tr, gso_fn)
         mu, r = gso_fn(cols)
         if weak_lll_holds(mu, r, d):
             tr.append(("offset", offset, True))
@@ -142,7 +252,7 @@ def lll_reduce(B0, delta=0.99, *, gso=None, lll_size=None):
     return cols, transpose_cols(Ucols), tr
 
 
-def lll_reduce_rows(A0, delta=0.99, *, gso=None, lll_size=None):
+def lll_reduce_rows(A0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False):
     """Row-convention entry point: ``A0`` rows are the basis vectors.
 
     Returns ``(rows, T, transcript)`` with ``T @ A0 == rows``. This is the
@@ -152,7 +262,7 @@ def lll_reduce_rows(A0, delta=0.99, *, gso=None, lll_size=None):
     """
     A0_rows = to_int_matrix(A0, name="A0")
     cols, U_rows, tr = lll_reduce(
-        transpose_cols(A0_rows), delta, gso=gso, lll_size=lll_size
+        transpose_cols(A0_rows), delta, gso=gso, lll_size=lll_size, use_seysen=use_seysen
     )
     rows = [c[:] for c in cols]  # reduced basis vectors as rows (== B^T)
     T = transpose_cols(U_rows)   # == U^T

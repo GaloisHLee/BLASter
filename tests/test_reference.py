@@ -313,6 +313,67 @@ class TestTranscript(unittest.TestCase):
                     self.assertLess(r[2], end)
 
 
+class TestReferenceSeysenPanel(unittest.TestCase):
+    """B-1: reference ``use_seysen=True`` transcribes the recursive Seysen panel.
+
+    The Seysen panel replaces the classical size-reduction panel: two-column
+    Seysen leaves plus rounded-inverse cross-panel, in exact ``Fraction``. The
+    reference must reproduce FastInt64 ``reduce(..., use_seysen=True)`` exactly
+    on a q-ary corpus, and its output must certify under ``verify_reduction``.
+    """
+
+    QARY = {
+        "q17_3": np.array([[17, 0, 0], [0, 17, 0], [3, 5, 1]], dtype=np.int64),
+        "q17_4": np.array(
+            [[17, 0, 0, 0], [0, 17, 0, 0], [0, 0, 17, 0], [3, 5, 7, 1]],
+            dtype=np.int64,
+        ),
+        "q13_5": np.array(
+            [[13, 0, 0, 0, 0], [0, 13, 0, 0, 0], [0, 0, 13, 0, 0],
+             [0, 0, 0, 13, 0], [2, 4, 6, 8, 1]],
+            dtype=np.int64,
+        ),
+        "q31_6": np.array(
+            [[31, 0, 0, 0, 0, 0], [0, 31, 0, 0, 0, 0], [0, 0, 31, 0, 0, 0],
+             [0, 0, 0, 31, 0, 0], [0, 0, 0, 0, 31, 0], [5, 7, 9, 11, 13, 1]],
+            dtype=np.int64,
+        ),
+    }
+
+    def test_matches_fastint64_seysen(self):
+        for name, A in self.QARY.items():
+            with self.subTest(name=name):
+                n = A.shape[1]
+                U_fast, B_fast, _ = reduce(
+                    A, lll_size=n, delta=0.99, cores=1, use_seysen=True
+                )
+                cols_ref, U_ref, _ = lll_reduce(A, delta=0.99, use_seysen=True)
+                B_ref = np.array(cols_ref, dtype=np.int64).T
+                np.testing.assert_array_equal(B_ref, B_fast)
+                np.testing.assert_array_equal(
+                    np.array(U_ref, dtype=np.int64), U_fast
+                )
+                rep = verify_reduction(
+                    A, B_ref, np.array(U_ref, dtype=np.int64), delta=0.99
+                )
+                self.assertTrue(rep.verified, name)
+
+    def test_reduce_basis_reference_accepts_use_seysen(self):
+        from blaster.api import reduce_basis
+        A = self.QARY["q17_4"]
+        cols, U, _ = lll_reduce(A, delta=0.99, use_seysen=True)
+        red, transform, transcript = reduce_basis(
+            A, orientation="columns", engine="reference",
+            delta=0.99, use_seysen=True, return_transform=True,
+        )
+        np.testing.assert_array_equal(
+            np.array(red, dtype=object), np.array(cols, dtype=object).T
+        )
+        np.testing.assert_array_equal(
+            np.array(transform, dtype=object), np.array(U, dtype=object)
+        )
+
+
 class TestInputValidation(unittest.TestCase):
     """M-2/M-3: the exact reducer rejects invalid input with a clean error."""
 
