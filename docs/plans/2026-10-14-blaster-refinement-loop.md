@@ -169,9 +169,10 @@ open one. A `[done]` item is already committed.
   `reduce(..., cores=k)` returns the same `(U, B·U)` for every `k >= 1` and across
   repeat runs. Pinned by `test_output_deterministic_across_core_counts` (commit `b566071`).
 
-- **E-6. Exact `stats` consumers.** Ensure `rhf`/`slope`/`potential`/`gaussian_heuristic`
+- **E-6. Exact `stats` consumers.** `[done]` `rhf`/`slope`/`potential`/`gaussian_heuristic`
   consume the exact `get_profile` output (`0.5*log2(r_i)` values) without regressing.
-  *Acceptance:* a test running these on an arbitrary-precision basis.
+  *Acceptance:* a test running these on an arbitrary-precision basis — pinned by
+  `TestStatsConsumersArbitraryPrecision` against hand-derived closed forms (commit `bb45ca1`).
 
 ### Track F — FastInt64 verification gaps (from the implementation map)
 
