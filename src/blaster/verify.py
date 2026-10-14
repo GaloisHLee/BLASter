@@ -81,11 +81,14 @@ def verify_reduction(B0, B, U, delta=0.99, *, mode="lll", gso=None, depth=1):
     * ``"deeplll"`` — size reduction **and** the deep condition, the latter
       gated with the given ``depth`` (at least 1). weak-LLL is still computed
       and reported but not gated (it is implied by the deep condition).
+    * ``"bkz"`` — size reduction **and** the deep condition, the latter gated
+      with a fixed depth of 4 (the BKZ/HKZ tour's final whole-basis deep-LLL-4),
+      independent of the user ``depth`` kwarg.
 
     Any other value raises ``ValueError``.
     """
-    if mode not in ("lll", "seysen", "deeplll"):
-        raise ValueError(f"unknown reduction mode {mode!r}; expected 'lll', 'seysen' or 'deeplll'")
+    if mode not in ("lll", "seysen", "deeplll", "bkz"):
+        raise ValueError(f"unknown reduction mode {mode!r}; expected 'lll', 'seysen', 'deeplll' or 'bkz'")
 
     B0_rows = to_int_matrix(B0, name="B0")
     B_rows = to_int_matrix(B, name="B")
@@ -116,11 +119,11 @@ def verify_reduction(B0, B, U, delta=0.99, *, mode="lll", gso=None, depth=1):
 
     weak_lll_ok = weak_lll_holds(mu, r, d)
     size_reduced_ok = is_size_reduced(mu)
-    deep_ok = deep_lll_holds(mu, r, d, _depth_param(depth) if mode == "deeplll" else 1)
+    deep_ok = deep_lll_holds(mu, r, d, 4 if mode == "bkz" else (_depth_param(depth) if mode == "deeplll" else 1))
 
     if mode == "seysen":
         verified = size_reduced_ok
-    elif mode == "deeplll":
+    elif mode in ("deeplll", "bkz"):
         verified = size_reduced_ok and deep_ok
     else:
         verified = weak_lll_ok and size_reduced_ok

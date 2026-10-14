@@ -119,5 +119,37 @@ class TestBKZReduce(unittest.TestCase):
                 bkz_reduce(B0, beta=bad)
 
 
+class TestVerifyBKZ(unittest.TestCase):
+    def test_bkz_mode_accepted_and_verifies(self):
+        B0 = [[2, 0, 0], [0, 2, 0], [0, 0, 2]]
+        B = B0
+        U = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+        rep = verify_reduction(B0, B, U, mode="bkz")
+        self.assertTrue(rep.verified)
+        self.assertEqual(rep.mode, "bkz")
+        self.assertTrue(rep.size_reduced_ok)
+        self.assertTrue(rep.deep_ok)
+
+    def test_bkz_mode_rejects_not_deep(self):
+        # size-reduced but NOT deep-LLL-4: b_1 is far shorter than b_0's norm.
+        B0 = [[10, 0], [0, 1]]
+        B = B0
+        U = [[1, 0], [0, 1]]
+        rep = verify_reduction(B0, B, U, mode="bkz")
+        self.assertFalse(rep.verified)
+        self.assertTrue(rep.structural_ok)
+        self.assertTrue(rep.size_reduced_ok)
+        self.assertFalse(rep.deep_ok)
+
+    def test_bkz_mode_ignores_depth_kwarg(self):
+        # depth=1 must NOT override the fixed depth-4 gating for bkz.
+        B0 = [[10, 0], [0, 1]]
+        B = B0
+        U = [[1, 0], [0, 1]]
+        rep = verify_reduction(B0, B, U, mode="bkz", depth=1)
+        self.assertFalse(rep.verified)
+        self.assertFalse(rep.deep_ok)
+
+
 if __name__ == "__main__":
     unittest.main()
