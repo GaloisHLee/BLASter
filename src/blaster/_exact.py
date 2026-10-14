@@ -128,17 +128,54 @@ def matmul_columns(B0_rows, U_rows):
 
 
 def delta_to_fraction(delta):
-    """Normalize ``delta`` to the exact dyadic rational of its binary64 value.
+    """Normalize ``delta`` to the exact rational used by the exact engines.
 
-    Mirrors the FastInt64 engine's validation: reject bools, non-real, and
-    non-finite values, then enforce the LLL Lovász range ``0.25 < delta < 1``.
+    A ``float`` keeps the exact binary64 dyadic of its value, mirroring the
+    FastInt64 engine's validation. Exact rational inputs — :class:`Fraction`,
+    Sage ``Rational``, or an integer-like value — are preserved exactly instead
+    of being rounded through ``float``, so the reference engine never silently
+    alters an exact ``delta``. Rejects bools, non-real values, and non-finite
+    floats, then enforces the LLL Lovász range ``1/4 < delta < 1`` in exact
+    arithmetic.
     """
-    if isinstance(delta, bool) or not isinstance(delta, Real) or not isfinite(float(delta)):
+    if isinstance(delta, bool) or not isinstance(delta, Real):
         raise ValueError("delta must be a finite real number")
-    d = float(delta)
-    if not 0.25 < d < 1.0:
+
+    if isinstance(delta, float):
+        if not isfinite(delta):
+            raise ValueError("delta must be a finite real number")
+        d = Fraction(*delta.as_integer_ratio())
+    else:
+        d = _exact_rational(delta)
+
+    if not Fraction(1, 4) < d < 1:
         raise ValueError("delta must satisfy 0.25 < delta < 1.0")
-    return Fraction(*d.as_integer_ratio())
+    return d
+
+
+def _exact_rational(value):
+    """Convert an exact ``Real`` to a :class:`Fraction` without a ``float`` cast.
+
+    Handles :class:`Fraction` and Sage ``Rational`` via numerator/denominator
+    (an attribute or a zero-argument method), and integer-like values via
+    ``operator.index``. Falls back to binary64 only for exotic ``Real`` types
+    that expose neither.
+    """
+    num = getattr(value, "numerator", None)
+    den = getattr(value, "denominator", None)
+    if callable(num):
+        num = num()
+    if callable(den):
+        den = den()
+    if num is not None and den is not None:
+        return Fraction(int(num), int(den))
+    try:
+        return Fraction(operator.index(value), 1)
+    except TypeError:
+        f = float(value)
+        if not isfinite(f):
+            raise ValueError("delta must be a finite real number")
+        return Fraction(*f.as_integer_ratio())
 
 
 def rational_gso(cols):

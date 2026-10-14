@@ -116,6 +116,17 @@ class TestDeltaToFraction(unittest.TestCase):
         self.assertEqual(delta_to_fraction(0.5), Fraction(1, 2))
         self.assertEqual(delta_to_fraction(0.75), Fraction(3, 4))
 
+    def test_exact_fraction_delta_is_preserved(self):
+        # An exact rational delta must not be rounded through binary64.
+        self.assertEqual(delta_to_fraction(Fraction(99, 100)), Fraction(99, 100))
+        self.assertEqual(delta_to_fraction(Fraction(3, 4)), Fraction(3, 4))
+
+    def test_exact_fraction_out_of_range_is_rejected(self):
+        with self.assertRaises(ValueError):
+            delta_to_fraction(Fraction(1, 4))  # 0.25 is not strictly > 0.25
+        with self.assertRaises(ValueError):
+            delta_to_fraction(Fraction(1, 1))
+
 
 class TestRationalGso(unittest.TestCase):
     def test_2x2(self):

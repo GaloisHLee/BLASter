@@ -5,7 +5,7 @@ from fractions import Fraction
 import numpy as np
 from sage.all import matrix, ZZ
 
-from blaster._exact import rational_gso, to_int_matrix
+from blaster._exact import delta_to_fraction, rational_gso, to_int_matrix
 from blaster.api import reduce_basis
 from blaster.reference import lll_reduce, lll_reduce_rows
 from blaster.verify import verify_reduction
@@ -49,6 +49,12 @@ class TestSageGso(unittest.TestCase):
 
     def test_to_int_matrix_accepts_sage(self):
         self.assertEqual(to_int_matrix(matrix(ZZ, [[1, 2], [3, 4]])), [[1, 2], [3, 4]])
+
+    def test_delta_to_fraction_preserves_sage_rational(self):
+        # A Sage Rational delta must not be rounded through binary64.
+        from sage.all import QQ
+        self.assertEqual(delta_to_fraction(QQ(99) / QQ(100)), Fraction(99, 100))
+        self.assertEqual(delta_to_fraction(QQ(3) / QQ(4)), Fraction(3, 4))
 
 
 class TestReduceBasisSageType(unittest.TestCase):
