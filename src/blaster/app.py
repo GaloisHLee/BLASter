@@ -12,6 +12,7 @@ from .blaster import reduce
 from .api import reduce_basis
 from .lattice_io import read_qary_lattice, write_lattice
 from .stats import gaussian_heuristic, get_profile, rhf, slope
+from .verify_sage import resolve_gso
 
 
 def build_parser():
@@ -72,10 +73,9 @@ def build_parser():
     return parser
 
 
-def _print_expected_quality(basis):
+def _print_expected_quality(basis, profile):
     rank = basis.shape[1]
     log_slope = log2(1.02190)
-    profile = get_profile(basis)
     log_det = sum(profile)
     norm_b1 = 2.0 ** (log_slope * (rank - 1) + log_det / rank)
 
@@ -89,6 +89,27 @@ def _print_expected_quality(basis):
         f"(GH: lambda_1 ~ {gaussian_heuristic(profile):.2f})",
         file=stderr,
     )
+
+
+def _print_profile(profile):
+    print(
+        "\nProfile = [" + " ".join(f"{value:.2f}" for value in profile) + "]\n"
+        f"RHF = {rhf(profile):.5f}^n, slope = {slope(profile):.6f}, "
+        f"||b_1|| = {2.0**profile[0]:.1f}",
+        file=stderr,
+    )
+
+
+def _exact_profile(basis, gso=None):
+    """Return the log2 Gram-Schmidt norms of a column-oriented basis.
+
+    Computes ``0.5 * log2(r_i)`` from the exact GSO squared norms ``r_i``,
+    matching :func:`get_profile` without requiring ``np.linalg.qr`` (which
+    cannot handle object-dtype arrays).
+    """
+    columns = [list(basis[:, j]) for j in range(basis.shape[1])]
+    _, r = resolve_gso(gso)(columns)
+    return [0.5 * log2(float(ri)) for ri in r]
 
 
 def _run(args):
@@ -108,7 +129,7 @@ def _run(args):
     )
 
     if args.verbose:
-        _print_expected_quality(basis)
+        _print_expected_quality(basis, get_profile(basis))
 
     transform, reduced, time_profile = reduce(
         basis,
@@ -135,13 +156,7 @@ def _run(args):
     if args.verbose:
         print(f"\n{time_profile}", file=stderr)
     if args.debug:
-        profile = get_profile(reduced)
-        print(
-            "\nProfile = [" + " ".join(f"{value:.2f}" for value in profile) + "]\n"
-            f"RHF = {rhf(profile):.5f}^n, slope = {slope(profile):.6f}, "
-            f"||b_1|| = {2.0**profile[0]:.1f}",
-            file=stderr,
-        )
+        _print_profile(get_profile(reduced))
 
     if not np.array_equal(basis @ transform, reduced):
         raise RuntimeError("internal error: transformation does not reproduce the reduced basis")
@@ -152,9 +167,9 @@ def _run_reference(args):
     """Exact arbitrary-precision LLL path for the ``--engine reference`` CLI.
 
     The reference engine performs ordinary LLL only, so DeepLLL/BKZ shaping
-    options are rejected. The exact path operates on object-dtype arrays, which
-    ``np.linalg.qr`` in :func:`get_profile` cannot digest; profile, verbose,
-    debug, anim, and logfile outputs are therefore not emitted here.
+    options are rejected. Profile and expected-quality output are computed from
+    the exact Gram-Schmidt norms (``--anim``/``--logfile`` are not emitted, as
+    they depend on ``np.linalg.qr``, which cannot handle object-dtype arrays).
     """
     if (
         args.depth > 0
@@ -168,6 +183,9 @@ def _run_reference(args):
         )
 
     basis = read_qary_lattice(args.input, exact=True)
+    if args.verbose:
+        _print_expected_quality(basis, _exact_profile(basis, args.gso))
+
     reduced, transform, _ = reduce_basis(
         basis,
         orientation="columns",
@@ -181,6 +199,9 @@ def _run_reference(args):
         write_lattice(reduced, args.output, exact=True)
     elif not args.quiet:
         write_lattice(reduced, exact=True)
+
+    if args.debug:
+        _print_profile(_exact_profile(reduced, args.gso))
 
     if not np.array_equal(basis @ transform, reduced):
         raise RuntimeError("internal error: transformation does not reproduce the reduced basis")

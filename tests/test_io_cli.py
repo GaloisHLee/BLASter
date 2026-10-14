@@ -211,6 +211,43 @@ class CommandLineTests(unittest.TestCase):
         self.assertIn("reference", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
 
+    def test_cli_reference_engine_profiles_reduced_basis(self):
+        big = 1 << 70  # exceeds signed int64
+        source = io.StringIO()
+        write_lattice(
+            np.array(
+                [[big, 0, 0], [0, big, 0], [big // 2, big // 3, 1]],
+                dtype=object,
+            ),
+            source,
+            exact=True,
+        )
+        result = self.run_cli(
+            "--engine", "reference", "--profile", "--cores", "1",
+            input_text=source.getvalue(),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("RHF =", result.stderr)
+        self.assertIn("slope =", result.stderr)
+
+    def test_cli_reference_engine_verbose_reports_expected_quality(self):
+        big = 1 << 70
+        source = io.StringIO()
+        write_lattice(
+            np.array(
+                [[big, 0, 0], [0, big, 0], [big // 2, big // 3, 1]],
+                dtype=object,
+            ),
+            source,
+            exact=True,
+        )
+        result = self.run_cli(
+            "--engine", "reference", "--verbose", "--cores", "1",
+            input_text=source.getvalue(),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("E[||b_1||]", result.stderr)
+
     def test_compatibility_script_exposes_help(self):
         script = Path(__file__).resolve().parents[1] / "src" / "app.py"
         result = subprocess.run(

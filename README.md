@@ -229,6 +229,10 @@ end-to-end; pair it with `--gso sage` to use Sage's Gram-Schmidt accelerator:
 conda run -n sage106 blaster --engine reference --gso sage --input big.lat
 ```
 
+In reference mode `--verbose` and `--profile` report quality from the exact
+Gram-Schmidt norms rather than `np.linalg.qr`, so diagnostics work on
+arbitrary-precision bases too.
+
 The Python I/O layer under the CLI (`blaster.lattice_io`) reads and writes
 fplll matrix syntax. By default `parse_lattice`, `read_lattice`, and
 `write_lattice` use int64 storage and reject out-of-range entries; pass
