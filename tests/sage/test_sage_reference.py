@@ -36,6 +36,16 @@ class TestSageGso(unittest.TestCase):
         self.assertEqual(rep_rat.weak_lll_ok, rep_sage.weak_lll_ok)
         self.assertEqual(rep_rat.size_reduced_ok, rep_sage.size_reduced_ok)
 
+    def test_verify_gso_string_sage_matches_default(self):
+        B0 = [[3, 1, 4], [1, 5, 9], [2, 6, 5]]
+        rep_rat = verify_reduction(B0, B0, [[1, 0, 0], [0, 1, 0], [0, 0, 1]], delta=0.99)
+        rep_sage = verify_reduction(
+            B0, B0, [[1, 0, 0], [0, 1, 0], [0, 0, 1]], delta=0.99, gso="sage"
+        )
+        self.assertEqual(rep_rat.verified, rep_sage.verified)
+        self.assertEqual(rep_rat.weak_lll_ok, rep_sage.weak_lll_ok)
+        self.assertEqual(rep_rat.size_reduced_ok, rep_sage.size_reduced_ok)
+
     def test_to_int_matrix_accepts_sage(self):
         self.assertEqual(to_int_matrix(matrix(ZZ, [[1, 2], [3, 4]])), [[1, 2], [3, 4]])
 

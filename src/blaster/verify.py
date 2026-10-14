@@ -44,11 +44,31 @@ class VerificationReport:
     mode: str
 
 
+def _resolve_gso(gso):
+    """Resolve the ``gso`` argument of :func:`verify_reduction` to a callable.
+
+    ``None`` and ``"rational"`` select the pure-Python exact GSO; ``"sage"``
+    selects the Sage ``gram_schmidt`` accelerator; a callable is used directly.
+    """
+    if gso is None or gso == "rational":
+        return rational_gso
+    if gso == "sage":
+        from .verify_sage import sage_gso
+        return sage_gso
+    if callable(gso):
+        return gso
+    raise ValueError("gso must be None, 'rational', 'sage', or a callable")
+
+
 def verify_reduction(B0, B, U, delta=0.99, *, mode="lll", gso=None):
     """Verify a reduction result and return a per-check ``VerificationReport``.
 
     Raises ``VerificationFailed`` on any failed structural check. Postcondition
     failures are reported as flags on the returned report, not raised.
+
+    ``gso`` selects the exact Gram-Schmidt backend: ``None``/``"rational"`` for
+    the pure-Python implementation, ``"sage"`` for the Sage ``gram_schmidt``
+    accelerator, or a callable returning ``(mu, r)`` in the column convention.
     """
     B0_rows = to_int_matrix(B0, name="B0")
     B_rows = to_int_matrix(B, name="B")
@@ -75,7 +95,7 @@ def verify_reduction(B0, B, U, delta=0.99, *, mode="lll", gso=None):
 
     d = delta_to_fraction(delta)
     cols = [[B_rows[r][j] for r in range(m)] for j in range(n)]
-    mu, r = (gso or rational_gso)(cols)
+    mu, r = _resolve_gso(gso)(cols)
 
     weak_lll_ok = weak_lll_holds(mu, r, d)
     size_reduced_ok = is_size_reduced(mu)

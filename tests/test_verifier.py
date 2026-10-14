@@ -119,5 +119,25 @@ class TestM0Corpus(unittest.TestCase):
                 self.assertTrue(rep.verified, name)
 
 
+class TestGsoSelector(unittest.TestCase):
+    """verify_reduction's ``gso`` argument selects the exact GSO backend."""
+
+    def test_gso_string_rational_matches_default(self):
+        rep_default = verify_reduction(I2, I2, I2, delta=0.99)
+        rep_rational = verify_reduction(I2, I2, I2, delta=0.99, gso="rational")
+        self.assertEqual(rep_default.verified, rep_rational.verified)
+        self.assertEqual(rep_default.weak_lll_ok, rep_rational.weak_lll_ok)
+        self.assertEqual(rep_default.size_reduced_ok, rep_rational.size_reduced_ok)
+
+    def test_gso_callable_still_supported(self):
+        from blaster._exact import rational_gso
+        rep = verify_reduction(I2, I2, I2, delta=0.99, gso=rational_gso)
+        self.assertTrue(rep.verified)
+
+    def test_gso_invalid_selector_raises(self):
+        with self.assertRaisesRegex(ValueError, "gso"):
+            verify_reduction(I2, I2, I2, delta=0.99, gso="numpy")
+
+
 if __name__ == "__main__":
     unittest.main()
