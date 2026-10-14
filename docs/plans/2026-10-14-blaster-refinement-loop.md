@@ -184,6 +184,7 @@ The remaining "coverage gaps that gate a reference implementation" are FastInt64
   `_add_col`/`_matmul` (test_reference.py) pinned against hand-derived `2**80`
   closed forms across shapes (commit `e611a94`).
 - **F-2. Explicit normal-vs-partial (`KeyboardInterrupt`) completion status** test.
+  `[done]` — `TimeProfile.interrupted` flag + `CompletionStatusTests` (commit `357ed72`).
 - **F-3. Definition-level classical size-reduction postcondition** test.
 - **F-4. Direct offset / reduction-tree / front-tour / progressive-beta schedule** tests
   (overlaps A-2/D-1; do the reference-side versions first).
