@@ -6,8 +6,10 @@ It has no access to reducer scratch state and trusts no reducer claim.
 """
 from dataclasses import dataclass
 from fractions import Fraction
+from numbers import Integral
 
 from ._exact import (
+    deep_lll_holds,
     delta_to_fraction,
     det_bareiss,
     full_column_rank,
@@ -40,11 +42,27 @@ class VerificationReport:
     unimodular_ok: bool
     weak_lll_ok: bool
     size_reduced_ok: bool
+    deep_ok: bool
     delta: Fraction
     mode: str
 
 
-def verify_reduction(B0, B, U, delta=0.99, *, mode="lll", gso=None):
+def _depth_param(depth):
+    """Validate ``depth`` for ``mode="deeplll"`` exactly as the reducer does.
+
+    ``bool`` and non-integral values are rejected (``Integral`` covers both
+    Python ``int`` and Sage ``Integer``); the value is then range-checked.
+    ``mode="deeplll"`` requires ``depth >= 1`` (``depth=0`` is plain LLL).
+    """
+    if isinstance(depth, bool) or not isinstance(depth, Integral):
+        raise ValueError("depth must be an integer")
+    depth = int(depth)
+    if depth < 1:
+        raise ValueError("depth must be at least 1")
+    return depth
+
+
+def verify_reduction(B0, B, U, delta=0.99, *, mode="lll", gso=None, depth=1):
     """Verify a reduction result and return a per-check ``VerificationReport``.
 
     Raises ``VerificationFailed`` on any failed structural check. Postcondition
@@ -60,11 +78,14 @@ def verify_reduction(B0, B, U, delta=0.99, *, mode="lll", gso=None):
     * ``"seysen"`` — size reduction only; weak-LLL is still computed and
       reported but not gated (the enclosing ``SEGMENTED_LLL`` loop imposes
       weak-LLL, not the Seysen panel itself).
+    * ``"deeplll"`` — size reduction **and** the deep condition, the latter
+      gated with the given ``depth`` (at least 1). weak-LLL is still computed
+      and reported but not gated (it is implied by the deep condition).
 
     Any other value raises ``ValueError``.
     """
-    if mode not in ("lll", "seysen"):
-        raise ValueError(f"unknown reduction mode {mode!r}; expected 'lll' or 'seysen'")
+    if mode not in ("lll", "seysen", "deeplll"):
+        raise ValueError(f"unknown reduction mode {mode!r}; expected 'lll', 'seysen' or 'deeplll'")
 
     B0_rows = to_int_matrix(B0, name="B0")
     B_rows = to_int_matrix(B, name="B")
@@ -95,9 +116,12 @@ def verify_reduction(B0, B, U, delta=0.99, *, mode="lll", gso=None):
 
     weak_lll_ok = weak_lll_holds(mu, r, d)
     size_reduced_ok = is_size_reduced(mu)
+    deep_ok = deep_lll_holds(mu, r, d, _depth_param(depth) if mode == "deeplll" else 1)
 
     if mode == "seysen":
         verified = size_reduced_ok
+    elif mode == "deeplll":
+        verified = size_reduced_ok and deep_ok
     else:
         verified = weak_lll_ok and size_reduced_ok
 
@@ -109,6 +133,7 @@ def verify_reduction(B0, B, U, delta=0.99, *, mode="lll", gso=None):
         unimodular_ok=True,
         weak_lll_ok=weak_lll_ok,
         size_reduced_ok=size_reduced_ok,
+        deep_ok=deep_ok,
         delta=d,
         mode=mode,
     )

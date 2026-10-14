@@ -123,6 +123,46 @@ class TestSeysenMode(unittest.TestCase):
             verify_reduction(I2, I2, I2, delta=0.99, mode="bogus")
 
 
+class TestDeepLllMode(unittest.TestCase):
+    def test_deeplll_mode_rejects_size_reduced_but_not_deep(self):
+        # columns (100,0),(0,1): mu[0][1]=0 -> size-reduced, but for depth=1
+        # ||pi_0(b_1)||^2 = r1 = 1 <= delta*r0 = 0.99*10000 -> deep condition fails.
+        B0 = [[100, 0], [0, 1]]
+        rep = verify_reduction(B0, B0, I2, delta=0.99, mode="deeplll", depth=1)
+        self.assertTrue(rep.size_reduced_ok)
+        self.assertFalse(rep.weak_lll_ok)  # computed and reported, not gated
+        self.assertFalse(rep.deep_ok)
+        self.assertFalse(rep.verified)
+
+    def test_deeplll_mode_distinct_from_seysen(self):
+        B0 = [[100, 0], [0, 1]]
+        rep_seysen = verify_reduction(B0, B0, I2, delta=0.99, mode="seysen")
+        self.assertTrue(rep_seysen.verified)
+        rep_deep = verify_reduction(B0, B0, I2, delta=0.99, mode="deeplll", depth=1)
+        self.assertFalse(rep_deep.verified)
+
+    def test_deeplll_mode_certifies_reference_output(self):
+        from blaster.reference import lll_reduce
+        A = np.array([[12, 2, 3], [4, 5, 6], [7, 8, 9]])
+        cols, U_rows, _ = lll_reduce(A, delta=0.99, depth=2)
+        m, n = A.shape
+        B_rows = [[cols[j][r] for j in range(n)] for r in range(m)]
+        rep = verify_reduction(A, B_rows, U_rows, delta=0.99, mode="deeplll", depth=2)
+        self.assertTrue(rep.deep_ok)
+        self.assertTrue(rep.size_reduced_ok)
+        self.assertTrue(rep.verified)
+
+    def test_deeplll_depth_must_be_integer(self):
+        with self.assertRaisesRegex(ValueError, "depth must be an integer"):
+            verify_reduction(I2, I2, I2, delta=0.99, mode="deeplll", depth=True)
+        with self.assertRaisesRegex(ValueError, "depth must be an integer"):
+            verify_reduction(I2, I2, I2, delta=0.99, mode="deeplll", depth=1.5)
+
+    def test_deeplll_depth_must_be_at_least_one(self):
+        with self.assertRaisesRegex(ValueError, "depth must be at least 1"):
+            verify_reduction(I2, I2, I2, delta=0.99, mode="deeplll", depth=0)
+
+
 class TestM0Corpus(unittest.TestCase):
     """Acceptance #1: certify the current FastInt64 output on the M0 corpus."""
 

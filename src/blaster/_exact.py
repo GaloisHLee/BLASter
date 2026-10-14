@@ -222,6 +222,26 @@ def is_size_reduced(mu):
     return True
 
 
+def deep_lll_holds(mu, r, delta, depth):
+    """Strict deep-LLL(delta, depth): the deep condition over the window.
+
+    For every ``k`` and every in-window ``i < k`` (``i < depth or
+    i >= k - depth``), ``||pi_i(b_k)||^2 > delta * r_i``, where
+    ``||pi_i(b_k)||^2 = r_k + sum_{t=i}^{k-1} mu[t][k]^2 r_t``. ``rational_gso``
+    stores ``mu[k][k] = 0``, so the diagonal term is ``r_k`` itself; the sum is
+    maintained incrementally as ``proj -= mu[i][k]^2 r_i`` after each test.
+    """
+    n = len(r)
+    for k in range(1, n):
+        proj = r[k] + sum(mu[t][k] ** 2 * r[t] for t in range(k))
+        for i in range(k):
+            if i < depth or i >= k - depth:
+                if not proj > delta * r[i]:
+                    return False
+            proj -= mu[i][k] ** 2 * r[i]
+    return True
+
+
 def nearest_core(x):
     """Nearest integer to the rational ``x``, ties away from zero.
 
