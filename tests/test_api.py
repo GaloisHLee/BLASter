@@ -153,6 +153,42 @@ class ReductionApiTests(unittest.TestCase):
                     reduce(self.columns, **call_parameters)
 
 
+class CompletionStatusTests(unittest.TestCase):
+    """F-2: ``reduce`` surfaces whether reduction finished normally or was
+    interrupted, so a caller can tell a fully reduced basis from a partial one.
+
+    The interruption is injected by raising ``KeyboardInterrupt`` from the
+    reduction entry point — the exact signal the engine is documented to catch
+    and turn into a partial-state return rather than propagating.
+    """
+
+    def setUp(self):
+        self.columns = np.array(
+            [[10, 1, 0], [0, 10, 1], [0, 0, 1]], dtype=np.int64
+        )
+
+    def test_normal_completion_marks_profile_not_interrupted(self):
+        _, _, profile = reduce(self.columns, lll_size=3, cores=1, use_seysen=False)
+        self.assertFalse(profile.interrupted)
+
+    def test_interrupted_run_marks_profile_interrupted_and_returns_partial_state(self):
+        import blaster.blaster as blaster_module
+        from unittest import mock
+
+        with mock.patch.object(
+            blaster_module, "lll_reduce", side_effect=KeyboardInterrupt
+        ):
+            transform, reduced, profile = reduce(
+                self.columns, lll_size=3, cores=1, use_seysen=False
+            )
+
+        self.assertTrue(profile.interrupted)
+        # The partial state still comes back in the same (transform, basis,
+        # profile) tuple shape; no exception escapes the engine.
+        self.assertEqual(transform.shape, (3, 3))
+        self.assertEqual(reduced.shape, self.columns.shape)
+
+
 class ReferenceEngineTests(unittest.TestCase):
     """engine="reference": exact arbitrary-precision LLL via the high-level API."""
 

@@ -32,6 +32,7 @@ class TimeProfile:
         ]
         self.num_iterations = 0
         self.times = [0] * 5
+        self.interrupted = False  # True when reduction was cut short by KeyboardInterrupt.
 
     def tick(self, *times):
         self.num_iterations += 1
@@ -376,7 +377,7 @@ def reduce(
                         tprof, tracers, debug, use_seysen,
                     )
         except KeyboardInterrupt:
-            pass  # Preserve the original behavior and return the partially reduced basis.
+            tprof.interrupted = True  # Preserve the original behavior and return the partially reduced basis.
     finally:
         if has_logfile:
             logfile_handle.close()
