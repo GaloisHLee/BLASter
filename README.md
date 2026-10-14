@@ -15,9 +15,11 @@ The project provides:
 ## Status and limitations
 
 BLASter remains a research prototype. It does not guarantee termination or
-correct output for every lattice. The implementation uses signed 64-bit integer
-storage, so both input entries and intermediate transformations are subject to
-the int64 range. BKZ enumeration is limited to block size 80.
+correct output for every lattice. The default FastInt64 engine uses signed
+64-bit integer storage, so both input entries and intermediate transformations
+are subject to the int64 range; the exact reference engine
+(``engine="reference"`` on ``reduce_basis``) lifts this limit for ordinary LLL
+at arbitrary precision. BKZ enumeration is limited to block size 80.
 
 Use the transformation invariant and the reduction checks exposed by the test
 suite when evaluating new inputs. Do not treat BLASter as a hardened
@@ -143,6 +145,37 @@ assert np.array_equal(column_basis @ transform, reduced)
 
 Set `orientation="columns"` on `reduce_basis` when a type-preserving,
 column-oriented interface is needed.
+
+### Exact and Sage-accelerated backends
+
+`reduce_basis` uses the C-accelerated FastInt64 engine by default, which requires
+int64 entries and computes Gram-Schmidt in binary64. Pass `engine="reference"`
+for an exact arbitrary-precision LLL (ordinary LLL only, any entry magnitude,
+only the `delta` parameter; the third return value is a decision transcript
+rather than a `TimeProfile`):
+
+```python
+from blaster import reduce_basis
+
+big = 1 << 70  # exceeds int64
+reduced, transform, transcript = reduce_basis(
+    [[big, 0, 0], [0, big, 0], [big // 2, big // 3, 1]],
+    engine="reference",
+    return_transform=True,
+)
+```
+
+`verify_reduction` takes a `gso` selector for its exact Gram-Schmidt backend:
+`gso="rational"` (the default) uses pure-Python exact arithmetic, while
+`gso="sage"` uses Sage's `gram_schmidt` accelerator under the same exact
+contract:
+
+```python
+from blaster import verify_reduction
+
+rep = verify_reduction(B0, B, U, delta=0.99, gso="sage")
+assert rep.verified
+```
 
 Runnable Sage scripts covering LLL, DeepLLL, BKZ, and column-oriented bases are
 available in [`examples/sage/`](examples/sage/). Run all of them with:
