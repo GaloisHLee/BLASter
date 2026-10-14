@@ -92,6 +92,70 @@ class TestReferenceMatchesFastInt64(unittest.TestCase):
         self.assertFalse(np.array_equal(B_ref, B_fast))
 
 
+class TestSegmentedLllSize(unittest.TestCase):
+    """A-1: ``lll_reduce`` gains a segment width ``lll_size`` matching FastInt64.
+
+    When ``lll_size < n`` the columns partition into disjoint segments and each
+    segment is reduced locally in a deterministic sequential order. The exact
+    reference is a sequential transcription of FastInt64's parallel
+    ``block_lll``; parallelism is a performance property only, out of scope.
+    """
+
+    def test_segmented_matches_fastint64(self):
+        for name, A in CASES.items():
+            n = A.shape[1]
+            for lll_size in (2, 3):
+                if lll_size >= n:
+                    continue
+                with self.subTest(name=name, lll_size=lll_size):
+                    U_fast, B_fast, _ = reduce(A, lll_size=lll_size, delta=0.99, cores=1)
+                    cols_ref, U_ref, _ = lll_reduce(A, delta=0.99, lll_size=lll_size)
+                    B_ref = np.array(cols_ref, dtype=np.int64).T
+                    np.testing.assert_array_equal(B_ref, B_fast)
+                    np.testing.assert_array_equal(np.array(U_ref, dtype=np.int64), U_fast)
+                    rep = verify_reduction(A, B_ref, np.array(U_ref, dtype=np.int64), delta=0.99)
+                    self.assertTrue(rep.verified)
+
+    def test_default_is_single_segment(self):
+        A = CASES["rand5"]
+        n = A.shape[1]
+        cols_full, U_full, tr_full = lll_reduce(A, delta=0.99)
+        cols_n, U_n, tr_n = lll_reduce(A, delta=0.99, lll_size=n)
+        self.assertEqual(cols_full, cols_n)
+        self.assertEqual(U_full, U_n)
+        self.assertEqual(tr_full, tr_n)
+
+    def test_lll_size_above_rank_equals_single_segment(self):
+        A = CASES["rand5"]
+        n = A.shape[1]
+        cols_n, U_n, tr_n = lll_reduce(A, delta=0.99, lll_size=n)
+        cols_big, U_big, tr_big = lll_reduce(A, delta=0.99, lll_size=n + 10)
+        self.assertEqual(cols_n, cols_big)
+        self.assertEqual(U_n, U_big)
+        self.assertEqual(tr_n, tr_big)
+
+    def test_lll_size_validation(self):
+        for bad in (0, 1, -3):
+            with self.subTest(lll_size=bad):
+                with self.assertRaises(ValueError):
+                    lll_reduce(CASES["ex3"], delta=0.99, lll_size=bad)
+
+    def test_reduce_basis_reference_accepts_lll_size(self):
+        from blaster.api import reduce_basis
+        A = CASES["rand4"]
+        cols, U, _ = lll_reduce(A, delta=0.99, lll_size=2)
+        red, transform, transcript = reduce_basis(
+            A, orientation="columns", engine="reference",
+            delta=0.99, lll_size=2, return_transform=True,
+        )
+        np.testing.assert_array_equal(
+            np.array(red, dtype=object), np.array(cols, dtype=object).T
+        )
+        np.testing.assert_array_equal(
+            np.array(transform, dtype=object), np.array(U, dtype=object)
+        )
+
+
 class TestReferenceOutputAcceptedByVerifier(unittest.TestCase):
     """Acceptance #4: the reference output is certified by the independent verifier."""
 
