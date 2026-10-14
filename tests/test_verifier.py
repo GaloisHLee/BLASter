@@ -92,6 +92,37 @@ class TestPostconditions(unittest.TestCase):
         self.assertEqual(rep.delta, Fraction(*float(0.99).as_integer_ratio()))
 
 
+class TestSeysenMode(unittest.TestCase):
+    def test_seysen_mode_gates_on_size_reduction_not_weak_lll(self):
+        # columns (100,0),(0,1): mu[0][1]=0 -> size-reduced, but r1=1 < delta*r0
+        B0 = [[100, 0], [0, 1]]
+        rep = verify_reduction(B0, B0, I2, delta=0.99, mode="seysen")
+        self.assertTrue(rep.size_reduced_ok)
+        self.assertFalse(rep.weak_lll_ok)  # computed and reported, not gated
+        self.assertTrue(rep.verified)
+
+    def test_seysen_mode_distinct_from_lll(self):
+        B0 = [[100, 0], [0, 1]]
+        rep_lll = verify_reduction(B0, B0, I2, delta=0.99, mode="lll")
+        self.assertFalse(rep_lll.verified)  # weak-LLL gate fails under "lll"
+
+    def test_seysen_mode_corruption_reported_not_raised(self):
+        # col_1 += 2*col_0 on both B and U keeps B0*U==B and det(U)=1, but
+        # shifts mu[0][1] += 2 -> |mu[0][1]| = 2 > 1/2.
+        B0 = [[1, 0], [0, 1]]
+        V = [[1, 2], [0, 1]]
+        B = matmul(B0, V)
+        U = matmul(I2, V)
+        rep = verify_reduction(B0, B, U, delta=0.99, mode="seysen")
+        self.assertTrue(rep.structural_ok)
+        self.assertFalse(rep.size_reduced_ok)
+        self.assertFalse(rep.verified)
+
+    def test_unknown_mode_raises(self):
+        with self.assertRaises(ValueError):
+            verify_reduction(I2, I2, I2, delta=0.99, mode="bogus")
+
+
 class TestM0Corpus(unittest.TestCase):
     """Acceptance #1: certify the current FastInt64 output on the M0 corpus."""
 

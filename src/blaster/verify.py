@@ -53,7 +53,19 @@ def verify_reduction(B0, B, U, delta=0.99, *, mode="lll", gso=None):
     ``gso`` selects the exact Gram-Schmidt backend: ``None``/``"rational"`` for
     the pure-Python implementation, ``"sage"`` for the Sage ``gram_schmidt``
     accelerator, or a callable returning ``(mu, r)`` in the column convention.
+
+    ``mode`` selects the reduction postcondition gated into ``verified``:
+
+    * ``"lll"`` — weak-LLL **and** size reduction (classical or Seysen panel).
+    * ``"seysen"`` — size reduction only; weak-LLL is still computed and
+      reported but not gated (the enclosing ``SEGMENTED_LLL`` loop imposes
+      weak-LLL, not the Seysen panel itself).
+
+    Any other value raises ``ValueError``.
     """
+    if mode not in ("lll", "seysen"):
+        raise ValueError(f"unknown reduction mode {mode!r}; expected 'lll' or 'seysen'")
+
     B0_rows = to_int_matrix(B0, name="B0")
     B_rows = to_int_matrix(B, name="B")
     U_rows = to_int_matrix(U, name="U")
@@ -84,8 +96,13 @@ def verify_reduction(B0, B, U, delta=0.99, *, mode="lll", gso=None):
     weak_lll_ok = weak_lll_holds(mu, r, d)
     size_reduced_ok = is_size_reduced(mu)
 
+    if mode == "seysen":
+        verified = size_reduced_ok
+    else:
+        verified = weak_lll_ok and size_reduced_ok
+
     return VerificationReport(
-        verified=weak_lll_ok and size_reduced_ok,
+        verified=verified,
         structural_ok=True,
         full_rank_ok=True,
         product_ok=True,
