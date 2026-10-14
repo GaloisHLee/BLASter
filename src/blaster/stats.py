@@ -1,6 +1,7 @@
 """
 Utility functions for computing the basis profile of a given basis, and measuring its quality.
 """
+import operator
 from fractions import Fraction
 from math import exp, gamma, log2, pi
 import numpy as np
@@ -24,7 +25,7 @@ def get_profile(basis, is_upper=False, *, gso=None):
         if is_sage_matrix(basis) or np.asarray(basis).dtype.kind == "O":
             return _object_profile(basis, gso=gso)
         upper = np.linalg.qr(basis, mode='r')
-    return [log2(abs(d_i)) for d_i in upper.diagonal()]
+    return [_log2_exact(abs(d_i)) for d_i in upper.diagonal()]
 
 
 def _log2_exact(value):
@@ -33,11 +34,16 @@ def _log2_exact(value):
     ``np.linalg.qr`` coerces object entries to ``float64``, which overflows or
     rounds for entries beyond that range. ``math.log2`` takes an integer
     directly, and a :class:`Fraction` is handled via numerator/denominator so
-    neither overflows.
+    neither overflows. Integer-like values (Sage ``Integer``, NumPy integer)
+    are coerced through ``operator.index`` first so a Sage diagonal entry is
+    never rounded through ``float``.
     """
     if isinstance(value, Fraction):
         return log2(value.numerator) - log2(value.denominator)
-    return log2(value)
+    try:
+        return log2(operator.index(value))
+    except TypeError:
+        return log2(value)
 
 
 def _object_profile(basis, *, gso=None):

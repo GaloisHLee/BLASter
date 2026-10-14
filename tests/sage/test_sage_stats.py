@@ -25,6 +25,14 @@ class TestGetProfileSageMatrix(unittest.TestCase):
         )
         self.assertEqual(get_profile(basis), expected)
 
+    def test_get_profile_sage_matrix_is_upper(self):
+        # The is_upper shortcut reads ``upper.diagonal()`` and logs each entry
+        # directly; a Sage integer must not be coerced through float64, which
+        # overflows for entries beyond that range.
+        big = 1 << 2000
+        upper = matrix(ZZ, [[big, big], [0, 1]])
+        self.assertEqual(get_profile(upper, is_upper=True), [2000.0, 0.0])
+
 
 if __name__ == "__main__":
     unittest.main()
