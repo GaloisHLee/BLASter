@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 
 from blaster import reduce, verify_reduction
-from blaster.reference import lll_reduce, _progressive_betas
+from blaster.reference import lll_reduce, _progressive_betas, _add_col, _matmul
 
 
 CASES = {
@@ -536,6 +536,45 @@ class TestReferenceDeepLll(unittest.TestCase):
         B_ref = np.array(cols_ref, dtype=np.int64).T
         np.testing.assert_array_equal(B_ref, B_fast)
         np.testing.assert_array_equal(np.array(U_ref, dtype=np.int64), U_fast)
+
+
+class TestExactColumnAdditionAndProduct(unittest.TestCase):
+    """F-1: reference ``_add_col`` / ``_matmul`` stay exact beyond int64.
+
+    Column addition ``M[k] += z*M[i]`` and the reference matrix product are
+    the arbitrary-precision "final checker" primitives (§282-284): entries and
+    products may exceed signed int64 and the result is the exact closed form,
+    never a silent int64 wrap. The checked boundary (``as_int64_matrix``)
+    rejects out-of-range int64 input before any reduction begins.
+    """
+
+    S = 2 ** 40  # z*entry == 2**80, past int64
+
+    def test_add_col_exact_large_product(self):
+        M = [[self.S, self.S], [self.S, self.S]]  # col0=col1=[S, S]
+        _add_col(M, 0, 1, self.S)                  # col1 += S*col0
+        self.assertEqual(M, [[self.S, self.S],
+                             [self.S * (self.S + 1), self.S * (self.S + 1)]])
+
+    def test_add_col_negative_coefficient(self):
+        M = [[self.S, 1], [self.S, 2]]  # col0=[S, 1], col1=[S, 2]
+        _add_col(M, 0, 1, -self.S)      # col1 += -S*col0
+        self.assertEqual(M, [[self.S, 1],
+                             [self.S - self.S * self.S, 2 - self.S]])
+
+    def test_matmul_exact_large_product(self):
+        A = [[self.S, 1], [0, 1]]
+        B = [[self.S], [self.S]]
+        self.assertEqual(_matmul(A, B), [[self.S * self.S + self.S], [self.S]])
+
+    def test_matmul_dimension_mismatch_raises(self):
+        with self.assertRaisesRegex(ValueError, "matrix dimension mismatch"):
+            _matmul([[1, 2]], [[1, 2]])
+
+    def test_checked_int64_boundary_rejects_out_of_range(self):
+        from blaster._matrix import as_int64_matrix
+        with self.assertRaises(OverflowError):
+            as_int64_matrix([[2 ** 63, 0], [0, 1]], name="basis")
 
 
 class TestRowConvention(unittest.TestCase):

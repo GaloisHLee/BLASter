@@ -106,6 +106,68 @@ class TestMatmulColumns(unittest.TestCase):
         self.assertEqual(matmul_columns(b0, u), [[2, 2], [6, 4]])
 
 
+class TestMatmulColumnsOverflow(unittest.TestCase):
+    """F-1: ``matmul_columns`` is exact (arbitrary precision) across shapes.
+
+    Every case has an output entry ``S*S == 2**80`` that exceeds signed int64,
+    so a truncating implementation (silent int64 wrap) fails against the
+    hand-written closed form. The exact product must equal that closed form,
+    and a shape mismatch must raise before any (partial) result is produced.
+    """
+
+    S = 2 ** 40  # S*S = 2**80, well past int64; S alone exceeds int32
+
+    def test_square(self):
+        b0 = [[self.S, 1], [0, 1]]
+        u = [[self.S, 0], [0, 1]]
+        self.assertEqual(matmul_columns(b0, u), [[self.S * self.S, 1], [0, 1]])
+
+    def test_square_3x3(self):
+        S = self.S
+        b0 = [[S, 0, 0], [0, 1, 0], [0, 0, 1]]
+        u = [[S, 0, 0], [0, S, 0], [0, 0, 1]]
+        self.assertEqual(matmul_columns(b0, u), [[S * S, 0, 0], [0, S, 0], [0, 0, 1]])
+
+    def test_1x1(self):
+        self.assertEqual(matmul_columns([[self.S]], [[self.S]]), [[self.S * self.S]])
+
+    def test_tall(self):
+        S = self.S
+        b0 = [[S, 1], [0, 1], [1, 0]]
+        u = [[S, 0], [0, 1]]
+        self.assertEqual(matmul_columns(b0, u), [[S * S, 1], [0, 1], [S, 0]])
+
+    def test_wide(self):
+        S = self.S
+        b0 = [[S, 1, 0], [0, 1, 1]]
+        u = [[S, 0], [0, 1], [0, S]]
+        self.assertEqual(matmul_columns(b0, u), [[S * S, 1], [0, S + 1]])
+
+    def test_result_wider_than_tall(self):
+        S = self.S
+        b0 = [[S, 1], [0, 1]]
+        u = [[S, 0, 0], [0, 1, S]]
+        self.assertEqual(matmul_columns(b0, u), [[S * S, 1, S], [0, 1, S]])
+
+    def test_negative_entries(self):
+        S = self.S
+        b0 = [[-S, 1], [0, S]]
+        u = [[S, 0], [0, -S]]
+        self.assertEqual(matmul_columns(b0, u), [[-S * S, -S], [0, -S * S]])
+
+    def test_inner_dimension_mismatch_raises(self):
+        with self.assertRaisesRegex(ValueError, "U row count must equal B0 column count"):
+            matmul_columns([[1, 2], [3, 4]], [[1, 0]])
+
+    def test_mismatch_does_not_mutate_inputs(self):
+        b0 = [[1, 2], [3, 4]]
+        u = [[1, 0]]
+        with self.assertRaises(ValueError):
+            matmul_columns(b0, u)
+        self.assertEqual(b0, [[1, 2], [3, 4]])
+        self.assertEqual(u, [[1, 0]])
+
+
 class TestDeltaToFraction(unittest.TestCase):
     def test_099_is_binary64_dyadic(self):
         self.assertEqual(delta_to_fraction(0.99),
