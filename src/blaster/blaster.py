@@ -99,6 +99,22 @@ def lll_reduce(B, U, U_seysen, lll_size, delta, depth,
             tracer(tprof.num_iterations, prof, note)
 
 
+def _advance_front(cur_front, beta, n, bkz_size):
+    """Advance BKZ's reduction front and report whether a tour just completed.
+
+    Pure transcription of the inline scheduler in ``bkz_reduce``: the front
+    jumps by the segment stride ``bkz_size - beta + 1``. When the next block
+    would overrun the rank (``cur_front + beta > n``, strictly greater — an
+    exact fit ``== n`` still advances), the HKZ-reduction at the tail has ended
+    a tour, so the front resets to zero and a tour is counted.
+
+    :return: ``(new_front, tours_done_delta)`` where the delta is 0 or 1.
+    """
+    if cur_front + beta > n:
+        return 0, 1
+    return cur_front + (bkz_size - beta + 1), 0
+
+
 def bkz_reduce(B, U, U_seysen, lll_size, delta, depth,
                beta, bkz_tours, bkz_size, tprof, tracers, debug, use_seysen):
     """
@@ -148,12 +164,8 @@ def bkz_reduce(B, U, U_seysen, lll_size, delta, depth,
             tracer(tprof.num_iterations, prof, note)
 
         # After printing: update the current location of the 'reduction front'
-        if cur_front + beta > n:
-            # HKZ-reduction was performed at the end, which is the end of a tour.
-            cur_front = 0
-            tours_done += 1
-        else:
-            cur_front += (bkz_size - beta + 1)
+        cur_front, tours_done_delta = _advance_front(cur_front, beta, n, bkz_size)
+        tours_done += tours_done_delta
 
         # Perform a final LLL reduction at the end
         lll_reduce(B, U, U_seysen, lll_size, delta, depth, tprof, tracers, debug, use_seysen)

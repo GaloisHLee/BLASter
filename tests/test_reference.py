@@ -648,5 +648,168 @@ class TestProgressiveBetaSchedule(unittest.TestCase):
                 )
 
 
+class TestReductionTreeSchedule(unittest.TestCase):
+    """F-4: the balanced reduction-tree scheduler, pinned at its contract.
+
+    ``__reduction_ranges`` (FastInt64 ``size_reduction``) and ``_reduction_ranges``
+    (reference ``reference``) build the balanced binary reduction tree:
+    ``base_cases`` are adjacent pairs reduced directly, and each triple
+    ``(u, v, w)`` marks the split point ``v`` where ``[v:w)`` is reduced w.r.t.
+    ``[u:v)``. ``__babai_ranges`` maps each split index ``v`` to its deferred
+    propagation span ``(u, w)``.
+
+    The docstring's recursive reference realises the *same contract* with a
+    different (unrolled/merged) tree: its ``F(l, r)`` splits ``[l, r)`` at
+    ``(l + r) // 2`` and emits a length-2 ``[l, l+1)`` as base case ``l`` plus a
+    triple for every longer split, whereas the non-recursive implementation
+    unrolls length-2 intervals *into* their parent triple and records fewer
+    triples. These tests therefore pin the *contract* (the documented coverage
+    guarantee) and the implementation's own golden output — not a literal match
+    to the recursive reference.
+    """
+
+    # Golden output of the non-recursive implementation (hand-verified, n=1..9).
+    GOLDEN_RANGES = {
+        1: ([], []),
+        2: ([0], []),
+        3: ([1], [(0, 1, 3)]),
+        4: ([0, 2], [(0, 2, 4)]),
+        5: ([0, 3], [(2, 3, 5), (0, 2, 5)]),
+        6: ([1, 4], [(3, 4, 6), (0, 1, 3), (0, 3, 6)]),
+        7: ([1, 3, 5], [(3, 5, 7), (0, 1, 3), (0, 3, 7)]),
+        8: ([0, 2, 4, 6], [(4, 6, 8), (0, 2, 4), (0, 4, 8)]),
+        9: ([0, 2, 4, 7], [(6, 7, 9), (4, 6, 9), (0, 2, 4), (0, 4, 9)]),
+    }
+
+    GOLDEN_BABAI = {
+        1: [False],
+        2: [False, False],
+        3: [False, (0, 3), False],
+        4: [False, False, (0, 4), False],
+        5: [False, False, (0, 5), (2, 5), False],
+        6: [False, (0, 3), False, (0, 6), (3, 6), False],
+        7: [False, (0, 3), False, (0, 7), False, (3, 7), False],
+        8: [False, False, (0, 4), False, (0, 8), False, (4, 8), False],
+        9: [False, False, (0, 4), False, (0, 9), False, (4, 9), (6, 9), False],
+    }
+
+    @staticmethod
+    def _fast_ranges(n):
+        # `__reduction_ranges` is a name-mangled private; import via getattr so
+        # the double-underscore identifier is not mangled inside this class body.
+        import importlib
+        mod = importlib.import_module("blaster.size_reduction")
+        return getattr(mod, "__reduction_ranges")(n)
+
+    @staticmethod
+    def _fast_babai(n):
+        import importlib
+        mod = importlib.import_module("blaster.size_reduction")
+        return getattr(mod, "__babai_ranges")(n)
+
+    @staticmethod
+    def _ref_ranges(n):
+        from blaster.reference import _reduction_ranges
+        return _reduction_ranges(n)
+
+    def test_reduction_ranges_golden(self):
+        for n, (base, ranges) in self.GOLDEN_RANGES.items():
+            with self.subTest(n=n):
+                self.assertEqual(self._fast_ranges(n), (base, ranges))
+                self.assertEqual(self._ref_ranges(n), (base, ranges))
+
+    def test_babai_ranges_golden(self):
+        for n, babai in self.GOLDEN_BABAI.items():
+            with self.subTest(n=n):
+                self.assertEqual(self._fast_babai(n), babai)
+
+    def test_reference_matches_fastint64(self):
+        for n in range(1, 81):
+            with self.subTest(n=n):
+                self.assertEqual(self._ref_ranges(n), self._fast_ranges(n))
+
+    def test_every_column_pair_is_covered(self):
+        # The documented guarantee: for every 0 <= i < j < n, either j == i + 1
+        # with i a base case, or some triple (u, v, w) separates i and j
+        # (u <= i < v <= j < w). This is what makes the scheduler complete: no
+        # pair of columns is ever left unreduced.
+        for n in range(1, 61):
+            base, ranges = self._fast_ranges(n)
+            base = set(base)
+            for i in range(n):
+                for j in range(i + 1, n):
+                    covered = (j == i + 1 and i in base) or any(
+                        u <= i < v <= j < w for (u, v, w) in ranges
+                    )
+                    self.assertTrue(covered, (n, i, j))
+
+    def test_triples_and_base_cases_are_valid_indices(self):
+        for n in range(1, 81):
+            base, ranges = self._fast_ranges(n)
+            for b in base:
+                self.assertGreaterEqual(b, 0, (n, b))
+                self.assertLess(b, n, (n, b))
+            for (u, v, w) in ranges:
+                self.assertGreaterEqual(u, 0, (n, (u, v, w)))
+                self.assertLess(u, v, (n, (u, v, w)))
+                self.assertLess(v, w, (n, (u, v, w)))
+                self.assertLessEqual(w, n, (n, (u, v, w)))
+
+    def test_babai_marks_each_split_and_only_splits(self):
+        # ``__babai_ranges`` maps a split index ``v`` to its ``(u, w)`` span;
+        # every triple's middle owns its span, and every non-middle index stays
+        # ``False`` (a plain base case, no deferred propagation).
+        for n in range(1, 81):
+            _, ranges = self._fast_ranges(n)
+            babai = self._fast_babai(n)
+            split_to_span = {v: (u, w) for (u, v, w) in ranges}
+            for j in range(n):
+                self.assertEqual(babai[j], split_to_span.get(j, False), (n, j))
+
+
+class TestFrontTourSchedule(unittest.TestCase):
+    """F-4: the BKZ front/tour scheduler advances by the segment stride and
+    only wraps to a new tour on a *strict* overrun (``cur_front + beta > n``).
+
+    An exact end-of-rank fit (``cur_front + beta == n``) must still advance —
+    implementation-map row 113 flags the strict ``>`` as easy to misread as ``>=``.
+    """
+
+    def setUp(self):
+        from blaster.blaster import _advance_front
+        self._advance_front = _advance_front
+
+    def test_stride_is_segment_size_minus_beta_plus_one(self):
+        # n=10, beta=3, bkz_size=6 -> stride 6 - 3 + 1 = 4.
+        self.assertEqual(self._advance_front(0, 3, 10, 6), (4, 0))
+        self.assertEqual(self._advance_front(4, 3, 10, 6), (8, 0))
+
+    def test_exact_end_of_rank_fit_advances_does_not_wrap(self):
+        # cur_front + beta == n is NOT an overrun: strict '>' is the wrap gate.
+        self.assertEqual(self._advance_front(7, 3, 10, 6), (11, 0))
+        self.assertEqual(self._advance_front(6, 4, 10, 6), (9, 0))
+
+    def test_strict_overrun_wraps_and_counts_a_tour(self):
+        # cur_front + beta > n is the only wrap condition.
+        self.assertEqual(self._advance_front(8, 3, 10, 6), (0, 1))
+        self.assertEqual(self._advance_front(7, 4, 10, 6), (0, 1))
+
+    def test_unit_stride_when_segment_equals_beta(self):
+        # bkz_size == beta collapses the stride to 1.
+        self.assertEqual(self._advance_front(0, 3, 10, 3), (1, 0))
+        self.assertEqual(self._advance_front(8, 3, 10, 3), (0, 1))
+
+    def test_full_tour_visits_each_front_then_wraps(self):
+        fronts = []
+        cur_front, tours_done = 0, 0
+        while tours_done == 0:
+            cur_front, delta = self._advance_front(cur_front, 3, 10, 6)
+            tours_done += delta
+            if tours_done == 0:
+                fronts.append(cur_front)
+        self.assertEqual(fronts, [4, 8])
+        self.assertEqual(tours_done, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
