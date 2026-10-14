@@ -6,6 +6,7 @@ from blaster._bkz import (
     PRUNING_PARAMS,
     _gh_squared,
     _safe_gh_squared,
+    enumeration,
     get_pruning_coefficients,
 )
 
@@ -42,6 +43,36 @@ class TestPruningParams(unittest.TestCase):
         v = _safe_gh_squared(20, math.log(2.0))
         self.assertIsInstance(v, Fraction)
         self.assertGreater(v, 0)
+
+
+class TestEnumeration(unittest.TestCase):
+    def test_single_dim_finds_shortest_nonzero(self):
+        # 1-dim block, r=[4] (= ||b*_0||^2, so ||b*_0||=2), radius=5 ->
+        # shortest nonzero coefficient is +-1 (norm 1^2 * 4 = 4)
+        mu = [[Fraction(0)]]
+        r = [Fraction(4)]
+        pr = [Fraction(1)]
+        sol, norm = enumeration(mu, r, pr, Fraction(5))
+        self.assertEqual(norm, Fraction(4))
+        self.assertEqual(sol, [1])
+
+    def test_single_dim_no_solution_is_zero_norm(self):
+        # radius already <= shortest nonzero norm -> returns (sol, 0)
+        mu = [[Fraction(0)]]
+        r = [Fraction(4)]
+        pr = [Fraction(1)]
+        _, norm = enumeration(mu, r, pr, Fraction(4))
+        self.assertEqual(norm, Fraction(0))
+
+    def test_two_dim_unpruned_finds_combination(self):
+        # r=[1, 1/4], mu[0][1]=3/4, no pruning. norm^2(x0,x1) =
+        # (x0 + 3/4 x1)^2 + x1^2/4; minimum over Z^2\{0} is (-1,1) -> 5/16.
+        mu = [[Fraction(0), Fraction(3, 4)], [Fraction(0), Fraction(0)]]
+        r = [Fraction(1), Fraction(1, 4)]
+        pr = [Fraction(1), Fraction(1)]
+        sol, norm = enumeration(mu, r, pr, Fraction(1))
+        self.assertEqual(norm, Fraction(5, 16))
+        self.assertEqual(sol, [-1, 1])
 
 
 if __name__ == "__main__":

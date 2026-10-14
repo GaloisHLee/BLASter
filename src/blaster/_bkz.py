@@ -84,3 +84,73 @@ def _safe_gh_squared(dim, log_volume):
     gh2 = _gh_squared(dim, log_volume)
     factor = max(1.05, min(2.0, 1.0 + 4.0 / dim))
     return Fraction(*(gh2 * factor * factor).as_integer_ratio())
+
+
+def enumeration(mu, r, pr, radius):
+    """Exact Schnorr--Euchner pruned enumeration (transcription of ``lattice_enum_t``).
+
+    Returns ``(sol, norm)``: ``sol`` is the best coefficient vector (ints) and
+    ``norm`` its exact squared norm, or ``Fraction(0)`` if no nonzero vector is
+    strictly shorter than ``radius``.
+    """
+    n = len(r)
+    A = radius
+    AA = [A * pr[k] for k in range(n)]
+    x = [0] * n
+    Dx = [0] * n
+    D2x = [-1] * n
+    c = [Fraction(0)] * n
+    rr = [n - 1] * n
+    l = [Fraction(0)] * (n + 1)
+    sigT = [[Fraction(0)] * n for _ in range(n)]
+    sol = [0] * n
+
+    def update_AA():
+        for k in range(n):
+            AA[k] = A * pr[k]
+
+    def recur(i):
+        nonlocal A
+        if i == -1:
+            if l[0] > A or l[0] == 0:
+                return
+            for j in range(n):
+                sol[j] = x[j]
+            A = l[0]
+            update_AA()
+            return
+        ci = sigT[i][i]
+        xi = nearest_core(ci)
+        yi = ci - xi
+        li = l[i + 1] + yi * yi * r[i]
+        if li > AA[i]:
+            return
+        Dx[i] = D2x[i] = 1 if yi >= 0 else -1
+        c[i] = ci
+        x[i] = xi
+        l[i] = li
+        if i >= 1:
+            if rr[i] > rr[i - 1]:
+                rr[i - 1] = rr[i]
+            for j in range(rr[i - 1], i - 1, -1):
+                sigT[i - 1][j - 1] = sigT[i - 1][j] - x[j] * mu[i - 1][j]
+        while True:
+            recur(i - 1)
+            if l[i + 1] == 0:
+                x[i] += 1
+            else:
+                x[i] += Dx[i]
+                D2x[i] = -D2x[i]
+                Dx[i] = D2x[i] - Dx[i]
+            if i >= 1:
+                rr[i - 1] = i
+            yi2 = c[i] - x[i]
+            li2 = l[i + 1] + yi2 * yi2 * r[i]
+            if li2 > AA[i]:
+                return
+            l[i] = li2
+            if i >= 1:
+                sigT[i - 1][i - 1] = sigT[i - 1][i] - x[i] * mu[i - 1][i]
+
+    recur(n - 1)
+    return sol, (A if A < radius else Fraction(0))
