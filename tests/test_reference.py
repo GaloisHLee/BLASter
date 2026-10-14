@@ -224,6 +224,48 @@ class TestTranscript(unittest.TestCase):
             if rec[0] == "add":
                 self.assertIn(rec[4], ("nearest_core", "nearest_panel"))
 
+    def test_offset_toggle_alternates_half_then_zero(self):
+        """A-2: the offset toggles ``block//2 -> 0 -> block//2`` every iteration.
+
+        A direct transcript assertion of the exact sequence, not just that a
+        stop happened: every iteration but the closing record alternates
+        ``block//2, 0, block//2, 0, ...``, and the closing record repeats the
+        final iteration's offset with ``stopped=True``.
+        """
+        for name, A in CASES.items():
+            n = A.shape[1]
+            for lll_size in (2, 3, n):
+                if lll_size >= n and lll_size != n:
+                    continue
+                with self.subTest(name=name, lll_size=lll_size):
+                    block = min(lll_size, n)
+                    cols_ref, U_ref, tr = lll_reduce(A, delta=0.99, lll_size=lll_size)
+                    offs = [rec for rec in tr if rec[0] == "offset"]
+                    self.assertGreater(len(offs), 1)
+                    for idx, rec in enumerate(offs[:-1]):
+                        self.assertEqual(
+                            rec[1], block // 2 if idx % 2 == 0 else 0,
+                            f"iteration {idx} offset",
+                        )
+                        self.assertFalse(rec[2])
+                    self.assertEqual(offs[-1][1], offs[-2][1])
+                    self.assertTrue(offs[-1][2])
+
+    def test_exact_three_pass_offset_sequence(self):
+        """A-2: pin the exact offset records of a three-pass reduction.
+
+        ``ex3b`` (n=3) with ``lll_size=2`` reduces in three passes — offset 1,
+        0, then 1 — before the weak-LLL stop. The transcript records
+        ``(1,False), (0,False), (1,False), (1,True)`` exactly.
+        """
+        cols_ref, U_ref, tr = lll_reduce(CASES["ex3b"], delta=0.99, lll_size=2)
+        offs = [rec for rec in tr if rec[0] == "offset"]
+        self.assertEqual(
+            offs,
+            [("offset", 1, False), ("offset", 0, False),
+             ("offset", 1, False), ("offset", 1, True)],
+        )
+
 
 class TestInputValidation(unittest.TestCase):
     """M-2/M-3: the exact reducer rejects invalid input with a clean error."""
