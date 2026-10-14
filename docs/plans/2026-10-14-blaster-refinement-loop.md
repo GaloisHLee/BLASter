@@ -164,10 +164,10 @@ open one. A `[done]` item is already committed.
   `e02c629`, `f9d7687`, `2f049cc`, `9af0d7d`, `4c27bb7`). Revisit only to *enable* a flag
   once its stage lands.
 
-- **E-5. `cores > 1` determinism.** Pin whether FastInt64 multi-core output is
-  deterministic on a fixed corpus; document the answer (it is expected to be
-  deterministic given the commit order, but this is currently untested — see the
-  implementation map's "no deterministic transcript test").
+- **E-5. `cores > 1` determinism.** `[done]` FastInt64 multi-core output **is**
+  deterministic: the parallel segments commit their transforms in a fixed order, so
+  `reduce(..., cores=k)` returns the same `(U, B·U)` for every `k >= 1` and across
+  repeat runs. Pinned by `test_output_deterministic_across_core_counts` (commit `b566071`).
 
 - **E-6. Exact `stats` consumers.** Ensure `rhf`/`slope`/`potential`/`gaussian_heuristic`
   consume the exact `get_profile` output (`0.5*log2(r_i)` values) without regressing.
