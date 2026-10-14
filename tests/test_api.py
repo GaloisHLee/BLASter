@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from blaster import reduce, reduce_basis
+from blaster import reduce, reduce_basis, verify_reduction
 from blaster.size_reduction import is_weakly_lll_reduced
 
 
@@ -151,6 +151,47 @@ class ReductionApiTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     call_parameters = {"cores": 1, **parameters}
                     reduce(self.columns, **call_parameters)
+
+
+class ReferenceEngineTests(unittest.TestCase):
+    """engine="reference": exact arbitrary-precision LLL via the high-level API."""
+
+    def test_reference_engine_accepts_arbitrary_precision_entries(self):
+        big = 1 << 70  # exceeds int64; the fast engine would raise OverflowError
+        rows = [[big, 0, 0], [0, big, 0], [big // 2, big // 3, 1]]
+        reduced, transform, transcript = reduce_basis(
+            rows, engine="reference", return_transform=True
+        )
+        np.testing.assert_array_equal(
+            np.array(transform, dtype=object) @ np.array(rows, dtype=object),
+            np.array(reduced, dtype=object),
+        )
+        rep = verify_reduction(
+            np.array(rows, dtype=object).T,
+            np.array(reduced, dtype=object).T,
+            np.array(transform, dtype=object).T,
+            delta=0.99,
+        )
+        self.assertTrue(rep.verified)
+        self.assertTrue(transcript)  # non-empty decision log
+
+    def test_reference_engine_supports_column_orientation(self):
+        basis = np.array([[10, 0, 0], [1, 10, 0], [0, 1, 1]], dtype=np.int64)
+        reduced, transform, _ = reduce_basis(
+            basis, orientation="columns", engine="reference", return_transform=True
+        )
+        np.testing.assert_array_equal(
+            np.array(basis, dtype=object) @ np.array(transform, dtype=object),
+            np.array(reduced, dtype=object),
+        )
+
+    def test_reference_engine_rejects_unsupported_parameters(self):
+        with self.assertRaisesRegex(ValueError, "delta"):
+            reduce_basis([[1, 0], [0, 1]], engine="reference", cores=4)
+
+    def test_reference_engine_rejects_invalid_engine(self):
+        with self.assertRaisesRegex(ValueError, "engine"):
+            reduce_basis([[1, 0], [0, 1]], engine="quantum")
 
 
 if __name__ == "__main__":

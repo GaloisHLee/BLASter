@@ -47,6 +47,12 @@ class TestReduceBasisSageType(unittest.TestCase):
         self.assertTrue(type(B_red).__module__.startswith("sage."))
         self.assertTrue(type(T).__module__.startswith("sage."))
 
+    def test_reference_engine_preserves_sage_matrix_type(self):
+        A = matrix(ZZ, [[10, 0, 0], [1, 10, 0], [0, 1, 1]])
+        B_red, T, _ = reduce_basis(A, engine="reference", return_transform=True)
+        self.assertTrue(type(B_red).__module__.startswith("sage."))
+        self.assertTrue(type(T).__module__.startswith("sage."))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,13 +1,18 @@
 """High-level, row-oriented lattice reduction API."""
 
+import numpy as np
+
+from ._exact import to_int_matrix, transpose_cols
 from ._matrix import as_int64_matrix, is_sage_matrix, to_sage_matrix
 from .blaster import reduce
+from .reference import lll_reduce, lll_reduce_rows
 
 
 def reduce_basis(
     basis,
     *,
     orientation="rows",
+    engine="fast",
     return_transform=False,
     **parameters,
 ):
@@ -18,12 +23,28 @@ def reduce_basis(
     The result has the same orientation and, for a Sage input, is returned as a
     Sage integer matrix.
 
-    When ``return_transform`` is true, return ``(reduced, transform, profile)``.
+    ``engine`` selects the backend:
+
+    * ``"fast"`` (default) — the C-accelerated FastInt64 engine, which requires
+      every entry to fit in signed int64 and computes GSO in binary64.
+    * ``"reference"`` — the exact arbitrary-precision BLASter transcription
+      (ordinary LLL only). It accepts entries of any magnitude, supports only
+      the ``delta`` parameter, and its third return value is the decision
+      transcript (a list) rather than a ``TimeProfile``.
+
+    When ``return_transform`` is true, return ``(reduced, transform, extra)``.
     For row bases, ``transform @ basis == reduced``. For column bases,
-    ``basis @ transform == reduced``.
+    ``basis @ transform == reduced``. ``extra`` is a ``TimeProfile`` for the
+    fast engine and a decision transcript for the reference engine.
     """
     if orientation not in {"rows", "columns"}:
         raise ValueError("orientation must be 'rows' or 'columns'")
+    if engine not in {"fast", "reference"}:
+        raise ValueError("engine must be 'fast' or 'reference'")
+    if engine == "reference":
+        return _reduce_basis_reference(
+            basis, orientation=orientation, return_transform=return_transform, **parameters
+        )
 
     sage_input = is_sage_matrix(basis)
     sage_ring = basis.base_ring() if sage_input else None
@@ -44,4 +65,34 @@ def reduce_basis(
 
     if return_transform:
         return reduced, public_transform, profile
+    return reduced
+
+
+def _reduce_basis_reference(basis, *, orientation, return_transform, **parameters):
+    """Exact arbitrary-precision LLL path of :func:`reduce_basis`."""
+    delta = parameters.pop("delta", 0.99)
+    if parameters:
+        raise ValueError(
+            "reference engine supports only 'delta', got: " + ", ".join(sorted(parameters))
+        )
+
+    sage_input = is_sage_matrix(basis)
+    sage_ring = basis.base_ring() if sage_input else None
+    rows = to_int_matrix(basis, name="basis")
+
+    if orientation == "rows":
+        reduced_rows, transform, transcript = lll_reduce_rows(rows, delta=delta)
+    else:
+        cols, U_rows, transcript = lll_reduce(rows, delta=delta)
+        reduced_rows = transpose_cols(cols)
+        transform = U_rows
+
+    reduced = np.array(reduced_rows, dtype=object)
+    transform = np.array(transform, dtype=object)
+    if sage_input:
+        reduced = to_sage_matrix(reduced, sage_ring)
+        transform = to_sage_matrix(transform)
+
+    if return_transform:
+        return reduced, transform, transcript
     return reduced
