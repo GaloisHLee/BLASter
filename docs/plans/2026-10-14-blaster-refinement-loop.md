@@ -109,7 +109,7 @@ open one. A `[done]` item is already committed.
   half-offset-then-zero sequence from `blaster.py`/`reference.py` and add a direct
   transcript test that asserts the exact offset sequence (not just that a stop happened).
 
-- **A-3. Transactional phase-commit semantics.** Pin the commit boundary: a phase's
+- **A-3. Transactional phase-commit semantics.** [done] Pin the commit boundary: a phase's
   segment transforms commit together (one transcript epoch), so a verifier can see the
   basis jump only at segment boundaries. *Acceptance:* a transcript test asserting the
   per-phase commit structure.
