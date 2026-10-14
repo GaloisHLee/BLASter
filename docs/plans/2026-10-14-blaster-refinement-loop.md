@@ -148,9 +148,10 @@ open one. A `[done]` item is already committed.
 
 ### Track E — Engineering compatibility / precision polish
 
-- **E-1. `verify_reduction` mode registry.** Reject unknown modes explicitly and document
-  which modes have postconditions today (only `lll`, until B-2/C-2 land). *Acceptance:*
-  an unknown `mode` raises `ValueError`, and the registry table is documented.
+- **E-1. `verify_reduction` mode registry.** `[done]` Reject unknown modes explicitly and
+  document which modes have postconditions today (now `lll`/`seysen`/`deeplll`/`bkz`).
+  *Acceptance:* an unknown `mode` raises `ValueError` (`test_unknown_mode_raises`), and the
+  registry table is documented. Landed across B-2/C-2/D-2 (final 4-mode registry in `dee1160`).
 
 - **E-2. `get_profile` exactness for all input kinds.** `[done]` — Sage `is_upper`,
   Sage matrix, and object-dtype paths all exact (commits `ee6d99a`, `5a89354`, `7544538`).
