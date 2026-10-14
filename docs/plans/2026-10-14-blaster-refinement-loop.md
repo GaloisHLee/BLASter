@@ -121,7 +121,7 @@ open one. A `[done]` item is already committed.
   `lll_reduce` as a panel selector. *Acceptance:* matches FastInt64 Seysen output on the
   Seysen q-ary corpus, certified by `verify_reduction`.
 
-- **B-2. Seysen postcondition (spec-first).** Define the exact Seysen-reduced
+- **B-2. Seysen postcondition (spec-first).** [done] Define the exact Seysen-reduced
   postcondition and add `verify_reduction(mode="seysen")` + a corruption test that the
   verifier rejects a deliberately non-Seysen result. *This is spec work before code;
   record the definition in `docs/spec/` first.*
