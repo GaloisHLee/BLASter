@@ -138,7 +138,7 @@ open one. A `[done]` item is already committed.
 
 ### Track D — Stage 5: BKZ reference
 
-- **D-1. Progressive-beta schedule.** Transcribe `_progressive_betas` and add a direct
+- **D-1. Progressive-beta schedule.** [done] Transcribe `_progressive_betas` and add a direct
   schedule test (the implementation map flags this as untested).
 
 - **D-2. Exact pruned enumeration.** The largest item; exact GH-radius + pruned
