@@ -9,6 +9,7 @@ from sys import stderr
 import numpy as np
 
 from .blaster import reduce
+from .api import reduce_basis
 from .lattice_io import read_qary_lattice, write_lattice
 from .stats import gaussian_heuristic, get_profile, rhf, slope
 
@@ -18,6 +19,14 @@ def build_parser():
         prog="BLASter",
         description="Reduce an integer lattice basis with segmented LLL, DeepLLL, or BKZ",
         epilog="Input and output use fplll matrix format.",
+    )
+    parser.add_argument(
+        "--engine", choices=["fast", "reference"], default="fast",
+        help="reduction backend ('reference' = exact arbitrary-precision LLL)",
+    )
+    parser.add_argument(
+        "--gso", choices=["rational", "sage"],
+        help="exact Gram-Schmidt backend for the reference engine",
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="show reduction progress")
     parser.add_argument(
@@ -86,6 +95,11 @@ def _run(args):
     if args.input and args.output and Path(args.input).resolve() == Path(args.output).resolve():
         raise ValueError("input and output files must be different")
 
+    if args.engine == "fast" and args.gso is not None:
+        raise ValueError("--gso is only supported with --engine reference")
+    if args.engine == "reference":
+        return _run_reference(args)
+
     basis = read_qary_lattice(args.input)
     rank = basis.shape[1]
     args.cores = max(
@@ -128,6 +142,45 @@ def _run(args):
             f"||b_1|| = {2.0**profile[0]:.1f}",
             file=stderr,
         )
+
+    if not np.array_equal(basis @ transform, reduced):
+        raise RuntimeError("internal error: transformation does not reproduce the reduced basis")
+    return 0
+
+
+def _run_reference(args):
+    """Exact arbitrary-precision LLL path for the ``--engine reference`` CLI.
+
+    The reference engine performs ordinary LLL only, so DeepLLL/BKZ shaping
+    options are rejected. The exact path operates on object-dtype arrays, which
+    ``np.linalg.qr`` in :func:`get_profile` cannot digest; profile, verbose,
+    debug, anim, and logfile outputs are therefore not emitted here.
+    """
+    if (
+        args.depth > 0
+        or args.beta is not None
+        or args.bkz_size is not None
+        or args.bkz_prog is not None
+    ):
+        raise ValueError(
+            "reference engine supports ordinary LLL only (delta and gso); "
+            "DeepLLL/BKZ options are not supported"
+        )
+
+    basis = read_qary_lattice(args.input, exact=True)
+    reduced, transform, _ = reduce_basis(
+        basis,
+        orientation="columns",
+        engine="reference",
+        return_transform=True,
+        delta=args.delta,
+        gso=args.gso,
+    )
+
+    if args.output:
+        write_lattice(reduced, args.output, exact=True)
+    elif not args.quiet:
+        write_lattice(reduced, exact=True)
 
     if not np.array_equal(basis @ transform, reduced):
         raise RuntimeError("internal error: transformation does not reproduce the reduced basis")

@@ -221,6 +221,14 @@ Use `conda run -n sage106 blaster --help` for the complete parameter list.
 Invalid matrices, non-integer or out-of-range entries, incompatible options, and
 unsupported BKZ block sizes are reported as CLI errors without a traceback.
 
+The `--engine reference` flag runs the exact arbitrary-precision LLL backend
+(ordinary LLL only), so bases whose entries exceed signed int64 can be reduced
+end-to-end; pair it with `--gso sage` to use Sage's Gram-Schmidt accelerator:
+
+```console
+conda run -n sage106 blaster --engine reference --gso sage --input big.lat
+```
+
 The Python I/O layer under the CLI (`blaster.lattice_io`) reads and writes
 fplll matrix syntax. By default `parse_lattice`, `read_lattice`, and
 `write_lattice` use int64 storage and reject out-of-range entries; pass

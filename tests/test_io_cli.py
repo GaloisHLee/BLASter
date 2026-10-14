@@ -168,6 +168,49 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("slope = 0.000000", result.stderr)
 
+    def test_cli_reference_engine_reduces_big_integer_lattice(self):
+        big = 1 << 70  # exceeds signed int64
+        source = io.StringIO()
+        write_lattice(
+            np.array(
+                [[big, 0, 0], [0, big, 0], [big // 2, big // 3, 1]],
+                dtype=object,
+            ),
+            source,
+            exact=True,
+        )
+        result = self.run_cli(
+            "--engine", "reference", "--cores", "1", input_text=source.getvalue()
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        reduced = parse_lattice(result.stdout, qary_order=False, exact=True)
+        self.assertEqual(reduced.shape, (3, 3))
+
+    def test_cli_default_engine_rejects_big_integer_lattice(self):
+        big = 1 << 70
+        source = io.StringIO()
+        write_lattice(
+            np.array(
+                [[big, 0, 0], [0, big, 0], [big // 2, big // 3, 1]],
+                dtype=object,
+            ),
+            source,
+            exact=True,
+        )
+        result = self.run_cli("--cores", "1", input_text=source.getvalue())
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("int64", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_cli_reference_engine_rejects_unsupported_reduction_options(self):
+        result = self.run_cli(
+            "--engine", "reference", "--beta", "10",
+            input_text="[[10 0 0] [1 10 0] [0 1 1]]",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("reference", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_compatibility_script_exposes_help(self):
         script = Path(__file__).resolve().parents[1] / "src" / "app.py"
         result = subprocess.run(
