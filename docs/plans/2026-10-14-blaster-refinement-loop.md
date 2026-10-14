@@ -133,7 +133,7 @@ open one. A `[done]` item is already committed.
   FastInt64 DeepLLL on the DeepLLL corpus; a transcript test pins the local depth-selection
   trajectory.
 
-- **C-2. DeepLLL postcondition.** `verify_reduction(mode="deeplll")` postcondition +
+- **C-2. DeepLLL postcondition.** [done] `verify_reduction(mode="deeplll")` postcondition +
   corruption rejection.
 
 ### Track D — Stage 5: BKZ reference
