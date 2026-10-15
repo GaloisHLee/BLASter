@@ -421,6 +421,32 @@ def _svp(cols, Ucols, i, w, delta, tr, gso):
     _deeplll_local(cols, Ucols, 0, min(i + w, len(cols)), delta, 4, tr, gso)
 
 
+def _bkz_segment(cols, Ucols, i, w, beta, delta, tr, gso):
+    """Exact transcription of the C++ inner ``bkz_reduce`` on one ``w``-wide segment.
+
+    Deep-LLL-4 the segment ``[i, i+w)``, then run the SVP sweep: an HKZ tour
+    (``svp(j, i+w-j)``) when the block is wider than the segment, else a flat
+    ``svp(j, beta)`` sweep.
+    """
+    _deeplll_local(cols, Ucols, i, i + w, delta, 4, tr, gso)
+    if beta > w:
+        for j in range(i, i + w - 1):
+            _svp(cols, Ucols, j, i + w - j, delta, tr, gso)
+    else:
+        for j in range(i, i + w - beta + 1):
+            _svp(cols, Ucols, j, beta, delta, tr, gso)
+
+
+def _bkz_size_param(bkz_size, beta, n):
+    """Validate ``bkz_size``: an integer at least ``beta``, capped to the rank."""
+    if isinstance(bkz_size, bool) or not isinstance(bkz_size, Integral):
+        raise ValueError("bkz_size must be an integer")
+    bkz_size = int(bkz_size)
+    if bkz_size < beta:
+        raise ValueError("bkz_size must be at least beta")
+    return min(bkz_size, n)
+
+
 def _beta_param(beta):
     if isinstance(beta, bool) or not isinstance(beta, Integral):
         raise ValueError("beta must be an integer")
@@ -431,12 +457,10 @@ def _beta_param(beta):
 
 
 def bkz_reduce(B0, delta=0.99, *, beta, gso=None):
-    """Exact BKZ reduction returning ``(cols, U_rows, transcript)``.
+    """Exact single-sweep BKZ returning ``(cols, U_rows, transcript)``.
 
-    Pre-reduces the whole basis with deep-LLL-4, then runs a progressive BKZ
-    tour (``svp(i, beta)`` for each block start) or, when ``beta > n``, an HKZ
-    tour (``svp(i, n-i)``). ``beta <= 2`` returns immediately after the
-    pre-reduction (no ``svp`` is called). This never calls Sage ``BKZ``.
+    Kept as the whole-basis segment kernel: deep-LLL-4 pre-pass, then one
+    ``_bkz_segment(0, n, beta)`` sweep. ``beta <= 2`` returns after the pre-pass.
     """
     B0_rows = to_int_matrix(B0, name="B0")
     if not full_column_rank(B0_rows):
@@ -445,18 +469,11 @@ def bkz_reduce(B0, delta=0.99, *, beta, gso=None):
     d = delta_to_fraction(delta)
     beta = _beta_param(beta)
     gso_fn = resolve_gso(gso)
-
     cols = [column(B0_rows, j) for j in range(n)]
     Ucols = [[1 if r == j else 0 for r in range(n)] for j in range(n)]
     tr = []
-
-    _deeplll_local(cols, Ucols, 0, n, d, 4, tr, gso_fn)
     if beta <= 2:
+        _deeplll_local(cols, Ucols, 0, n, d, 4, tr, gso_fn)
         return cols, transpose_cols(Ucols), tr
-    if beta > n:
-        for i in range(n - 1):
-            _svp(cols, Ucols, i, n - i, d, tr, gso_fn)
-    else:
-        for i in range(n - beta + 1):
-            _svp(cols, Ucols, i, beta, d, tr, gso_fn)
+    _bkz_segment(cols, Ucols, 0, n, beta, d, tr, gso_fn)
     return cols, transpose_cols(Ucols), tr

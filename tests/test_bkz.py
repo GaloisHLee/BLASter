@@ -10,7 +10,7 @@ from blaster._bkz import (
     get_pruning_coefficients,
 )
 from blaster._exact import column, delta_to_fraction, to_int_matrix, transpose_cols
-from blaster.reference import _deeplll_local, bkz_reduce
+from blaster.reference import _bkz_segment, _deeplll_local, bkz_reduce
 from blaster.verify import verify_reduction
 from blaster.verify_sage import resolve_gso
 
@@ -117,6 +117,35 @@ class TestBKZReduce(unittest.TestCase):
         for bad in (1, 81, 3.5, True):
             with self.assertRaises(ValueError):
                 bkz_reduce(B0, beta=bad)
+
+
+class TestBKZSegment(unittest.TestCase):
+    def _columns(self, rows):
+        n = len(rows[0])
+        d = delta_to_fraction(0.99)
+        cols = [column(to_int_matrix(rows), j) for j in range(n)]
+        Ucols = [[1 if r == j else 0 for r in range(n)] for j in range(n)]
+        return cols, Ucols, [], d
+
+    def test_bkz_segment_hkz_tail_verifies(self):
+        # beta > segment width forces an HKZ sweep inside the segment.
+        B0 = [[2, 3, 5, 7, 11, 13], [0, 4, 6, 8, 10, 12], [0, 0, 7, 9, 12, 15],
+              [0, 0, 0, 11, 13, 17], [0, 0, 0, 0, 17, 19], [0, 0, 0, 0, 0, 23]]
+        cols, Ucols, tr, d = self._columns(B0)
+        _bkz_segment(cols, Ucols, 0, 6, 7, d, tr, resolve_gso(None))  # full segment [0,6), beta 7 > 6 -> HKZ
+        rep = verify_reduction(B0, transpose_cols(cols), transpose_cols(Ucols), mode="bkz")
+        self.assertTrue(rep.verified)
+
+    def test_bkz_size_below_beta_rejected(self):
+        from blaster.reference import _bkz_size_param
+        for bad in (3, 1, True, 2.5):
+            with self.subTest(bad=bad):
+                with self.assertRaisesRegex(ValueError, "bkz_size"):
+                    _bkz_size_param(bad, 4, 6)
+
+    def test_bkz_size_capped_at_rank(self):
+        from blaster.reference import _bkz_size_param
+        self.assertEqual(_bkz_size_param(10, 4, 6), 6)
 
 
 class TestVerifyBKZ(unittest.TestCase):
