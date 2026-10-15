@@ -217,6 +217,29 @@ class MultiCoreSwitchTests(unittest.TestCase):
 
         np.testing.assert_array_equal(reduced_1, reduced_auto)
 
+    def test_reduce_cores_two_matches_single_threaded(self):
+        t1, r1, _ = reduce(self.columns, lll_size=3, cores=1, use_seysen=False)
+        t2, r2, _ = reduce(self.columns, lll_size=3, cores=2, use_seysen=False)
+        np.testing.assert_array_equal(r1, r2)
+        np.testing.assert_array_equal(t1, t2)
+
+    def test_reduce_multi_segment_deterministic_across_cores(self):
+        # rank-3 with lll_size=3 is a single segment; use a wider basis so the
+        # Cython prange actually splits into multiple segments.
+        wide = np.array(
+            [[8, 1, 0, 0, 0, 0, 0, 0],
+             [0, 8, 1, 0, 0, 0, 0, 0],
+             [0, 0, 8, 1, 0, 0, 0, 0],
+             [0, 0, 0, 8, 1, 0, 0, 0],
+             [0, 0, 0, 0, 8, 1, 0, 0],
+             [0, 0, 0, 0, 0, 8, 1, 0],
+             [0, 0, 0, 0, 0, 0, 8, 1],
+             [0, 0, 0, 0, 0, 0, 0, 8]], dtype=np.int64
+        )
+        _, r1, _ = reduce(wide, lll_size=4, cores=1, use_seysen=False)
+        _, ra, _ = reduce(wide, lll_size=4, cores="auto", use_seysen=False)
+        np.testing.assert_array_equal(r1, ra)
+
 
 class CompletionStatusTests(unittest.TestCase):
     """F-2: ``reduce`` surfaces whether reduction finished normally or was

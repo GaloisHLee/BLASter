@@ -182,7 +182,7 @@ def _integer_parameter(name, value, minimum):
     return value
 
 
-def _resolve_cores(cores):
+def _resolve_cores(cores) -> int:
     """Resolve ``cores`` to a concrete thread count: ``"auto"`` (any case)
     selects all available cores; anything else must be an integer >= 1."""
     if isinstance(cores, str):
@@ -308,6 +308,7 @@ def reduce(
 
     ``delta`` is the Lovasz factor. ``lll_size`` and ``bkz_size`` control the
     parallel segment sizes, while ``cores`` controls the OpenMP worker count.
+    ``cores`` may be ``"auto"`` (default; all logical cores) or an integer ``>= 1``.
     Set ``depth`` for DeepLLL, or set ``beta`` (up to 80) for BKZ. DeepLLL and
     BKZ cannot be requested together. ``use_seysen=False`` selects classical
     size reduction instead of Seysen reduction.

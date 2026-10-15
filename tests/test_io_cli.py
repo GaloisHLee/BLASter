@@ -312,6 +312,23 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         reduced = parse_lattice(result.stdout, qary_order=False)
         self.assertEqual(reduced.shape, self.columns.shape)
+        # Basis vectors are stored as columns (see write_lattice/parse_lattice),
+        # so norm along axis=0 is the norm of each basis vector: LLL must make
+        # the longest one strictly shorter than the input's.
+        self.assertLess(
+            np.linalg.norm(reduced.astype(float), axis=0).max(),
+            np.linalg.norm(self.columns.astype(float), axis=0).max(),
+        )
+
+    def test_cli_cores_integer_matches_auto(self):
+        source = io.StringIO()
+        write_lattice(self.columns, source)
+        auto = self.run_cli("--no-seysen", "--cores", "auto", input_text=source.getvalue())
+        source.seek(0)
+        one = self.run_cli("--no-seysen", "--cores", "1", input_text=source.getvalue())
+        self.assertEqual(auto.returncode, 0, auto.stderr)
+        self.assertEqual(one.returncode, 0, one.stderr)
+        self.assertEqual(auto.stdout, one.stdout)
 
     def test_cli_cores_integer_reduces(self):
         source = io.StringIO()
