@@ -447,6 +447,15 @@ def _bkz_size_param(bkz_size, beta, n):
     return min(bkz_size, n)
 
 
+def _bkz_tours_param(bkz_tours):
+    if isinstance(bkz_tours, bool) or not isinstance(bkz_tours, Integral):
+        raise ValueError("bkz_tours must be an integer")
+    bkz_tours = int(bkz_tours)
+    if bkz_tours < 1:
+        raise ValueError("bkz_tours must be at least 1")
+    return bkz_tours
+
+
 def _beta_param(beta):
     if isinstance(beta, bool) or not isinstance(beta, Integral):
         raise ValueError("beta must be an integer")
@@ -456,11 +465,16 @@ def _beta_param(beta):
     return beta
 
 
-def bkz_reduce(B0, delta=0.99, *, beta, gso=None):
-    """Exact single-sweep BKZ returning ``(cols, U_rows, transcript)``.
+def bkz_reduce(B0, delta=0.99, *, beta, gso=None, lll_size=None,
+               use_seysen=False, bkz_tours=8, bkz_size=None):
+    """Exact progressive/segmented BKZ tour returning ``(cols, U_rows, transcript)``.
 
-    Kept as the whole-basis segment kernel: deep-LLL-4 pre-pass, then one
-    ``_bkz_segment(0, n, beta)`` sweep. ``beta <= 2`` returns after the pre-pass.
+    Transcribes FastInt64's Python ``bkz_reduce``: pre-reduce the whole basis
+    with deep-LLL-4 (full iterative LLL), then run ``bkz_tours`` tours. Each tour
+    partitions ``[cur_front % beta, n)`` into ``bkz_size``-wide segments, reduces
+    each with :func:`_bkz_segment`, applies the Seysen/size panel, advances the
+    front with :func:`_advance_front`, and finishes with another full LLL pass.
+    ``beta > n`` degenerates to a repeated whole-basis HKZ tour. Never calls Sage.
     """
     B0_rows = to_int_matrix(B0, name="B0")
     if not full_column_rank(B0_rows):
@@ -469,11 +483,25 @@ def bkz_reduce(B0, delta=0.99, *, beta, gso=None):
     d = delta_to_fraction(delta)
     beta = _beta_param(beta)
     gso_fn = resolve_gso(gso)
+    block = _segment_width(lll_size, n)
+    bkz_tours = _bkz_tours_param(bkz_tours)
+    if bkz_size is None:
+        bkz_size = max(block, beta)
+    bkz_size = _bkz_size_param(bkz_size, beta, n)
+
     cols = [column(B0_rows, j) for j in range(n)]
     Ucols = [[1 if r == j else 0 for r in range(n)] for j in range(n)]
     tr = []
-    if beta <= 2:
-        _deeplll_local(cols, Ucols, 0, n, d, 4, tr, gso_fn)
-        return cols, transpose_cols(Ucols), tr
-    _bkz_segment(cols, Ucols, 0, n, beta, d, tr, gso_fn)
+
+    _lll_tour(cols, Ucols, n, block, d, 4, use_seysen, tr, gso_fn)
+    tours_done, cur_front = 0, 0
+    while tours_done < bkz_tours:
+        for i in range(cur_front % beta, n, bkz_size):
+            w = min(n - i, bkz_size)
+            tr.append(("segment", i, w))
+            _bkz_segment(cols, Ucols, i, w, beta, d, tr, gso_fn)
+        (_seysen_panel if use_seysen else _size_panel)(cols, Ucols, tr, gso_fn)
+        cur_front, tours_done_delta = _advance_front(cur_front, beta, n, bkz_size)
+        tours_done += tours_done_delta
+        _lll_tour(cols, Ucols, n, block, d, 4, use_seysen, tr, gso_fn)
     return cols, transpose_cols(Ucols), tr

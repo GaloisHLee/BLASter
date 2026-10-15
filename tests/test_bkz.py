@@ -91,13 +91,20 @@ def _deeplll4_reference(B0, delta=0.99):
 
 
 class TestBKZReduce(unittest.TestCase):
-    def test_bkz2_is_deeplll4(self):
+    def test_bkz2_tour_verifies(self):
+        # Direct beta=2 call now runs a full (degenerate) tour and still verifies.
         B0 = [[2, 3, 5], [0, 4, 6], [0, 0, 7]]
-        cols_a, U_a, tr_a = bkz_reduce(B0, beta=2)
-        cols_b, U_b, tr_b = _deeplll4_reference(B0)
-        self.assertEqual(cols_a, cols_b)
-        self.assertEqual(U_a, U_b)
-        self.assertEqual(tr_a, tr_b)
+        cols, U_rows, tr = bkz_reduce(B0, beta=2)
+        rep = verify_reduction(B0, transpose_cols(cols), U_rows, mode="bkz")
+        self.assertTrue(rep.verified)
+
+    def test_bkz_multi_segment_multi_tour_verifies(self):
+        # n=6, beta=3, bkz_size=4 -> front stride 2; 2 tours visit several fronts.
+        B0 = [[2, 3, 5, 7, 11, 13], [0, 4, 6, 8, 10, 12], [0, 0, 7, 9, 12, 15],
+              [0, 0, 0, 11, 13, 17], [0, 0, 0, 0, 17, 19], [0, 0, 0, 0, 0, 23]]
+        cols, U_rows, tr = bkz_reduce(B0, beta=3, bkz_size=4, bkz_tours=2)
+        rep = verify_reduction(B0, transpose_cols(cols), U_rows, mode="bkz")
+        self.assertTrue(rep.verified)
 
     def test_bkz_tour_verifies(self):
         B0 = [[2, 3, 5, 7, 11], [0, 4, 6, 8, 10], [0, 0, 7, 9, 12],
