@@ -1,9 +1,19 @@
 # Python cache
 __pycache__
+*.py[cod]
+*$py.class
 *.egg-info
 *.egg-info/
 *.sage.py
 /dist/
+/build/
+
+# Test / coverage / type-check / lint caches
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
 # Shared libraries
 *.so
@@ -15,16 +25,20 @@ __pycache__
 /input/
 /output/
 
-# Cython related files
-/build/
-
 # Local eigen files
 /eigen*
 
-# Local venv
+# Virtual environments
+/venv/
+.venv/
+
+# Local conda/env activation shims
 /activate
 /python3
-/venv/
+
+# Environment files (may hold secrets)
+.env
+.env.*
 
 # cysignals creates this directory when Ctrl+C'ing during execution
 cysignals_crash_logs/
@@ -36,3 +50,14 @@ cysignals_crash_logs/
 /logs_other_*.csv
 /benchmark/logs_other_*.csv
 /debug.log
+
+# OS / editor cruft
+.DS_Store
+.vscode/
+.idea/
+
+# Scratch (do not commit)
+t.py
+
+# Superpowers agent workspace (git-ignored by design)
+.superpowers/
