@@ -284,6 +284,19 @@ def _progressive_betas(beta, increment):
     return tuple(range(start, beta + 1, increment))
 
 
+def _advance_front(cur_front, beta, n, bkz_size):
+    """Advance BKZ's reduction front; return ``(new_front, tours_done_delta)``.
+
+    Exact transcription of FastInt64 ``_advance_front``: the front jumps by the
+    segment stride ``bkz_size - beta + 1``. Only a *strict* overrun
+    (``cur_front + beta > n``) ends a tour (front resets to 0, delta 1); an
+    exact fit ``== n`` still advances.
+    """
+    if cur_front + beta > n:
+        return 0, 1
+    return cur_front + (bkz_size - beta + 1), 0
+
+
 def lll_reduce(B0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False, depth=0):
     """Exact segmented-LLL returning ``(cols, U_rows, transcript)``.
 

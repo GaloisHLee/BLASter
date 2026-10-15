@@ -776,7 +776,7 @@ class TestFrontTourSchedule(unittest.TestCase):
     """
 
     def setUp(self):
-        from blaster.blaster import _advance_front
+        from blaster.reference import _advance_front
         self._advance_front = _advance_front
 
     def test_stride_is_segment_size_minus_beta_plus_one(self):
@@ -809,6 +809,18 @@ class TestFrontTourSchedule(unittest.TestCase):
                 fronts.append(cur_front)
         self.assertEqual(fronts, [4, 8])
         self.assertEqual(tours_done, 1)
+
+    def test_matches_fastint64_source_of_truth(self):
+        from blaster.blaster import _advance_front as _fast
+        for beta in range(2, 9):
+            for n in range(beta, 13):
+                for bkz_size in range(beta, n + 1):
+                    for cur_front in range(0, n):
+                        self.assertEqual(
+                            self._advance_front(cur_front, beta, n, bkz_size),
+                            _fast(cur_front, beta, n, bkz_size),
+                            (cur_front, beta, n, bkz_size),
+                        )
 
 
 if __name__ == "__main__":
