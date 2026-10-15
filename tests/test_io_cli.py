@@ -299,6 +299,50 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("BLASter", result.stdout)
 
+    def test_cli_parser_default_cores_is_auto(self):
+        from blaster.app import build_parser
+        self.assertEqual(build_parser().parse_args([]).cores, "auto")
+
+    def test_cli_cores_auto_reduces(self):
+        source = io.StringIO()
+        write_lattice(self.columns, source)
+        result = self.run_cli(
+            "--no-seysen", "--cores", "auto", input_text=source.getvalue()
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        reduced = parse_lattice(result.stdout, qary_order=False)
+        self.assertEqual(reduced.shape, self.columns.shape)
+
+    def test_cli_cores_integer_reduces(self):
+        source = io.StringIO()
+        write_lattice(self.columns, source)
+        result = self.run_cli(
+            "--no-seysen", "--cores", "2", input_text=source.getvalue()
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_cli_omitted_cores_defaults_to_auto(self):
+        source = io.StringIO()
+        write_lattice(self.columns, source)
+        result = self.run_cli("--no-seysen", input_text=source.getvalue())
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_cli_rejects_invalid_cores_string(self):
+        result = self.run_cli(
+            "--no-seysen", "--cores", "bogus", input_text="[[1 0] [0 1]]"
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("cores", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_cli_rejects_cores_below_minimum(self):
+        result = self.run_cli(
+            "--no-seysen", "--cores", "0", input_text="[[1 0] [0 1]]"
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("cores", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

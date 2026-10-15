@@ -1,8 +1,7 @@
 """Command-line interface for BLASter lattice reduction."""
 
 import argparse
-from math import ceil, log2
-from multiprocessing import cpu_count
+from math import log2
 from pathlib import Path
 from sys import stderr
 
@@ -12,6 +11,13 @@ from .blaster import reduce
 from .api import reduce_basis
 from .lattice_io import read_qary_lattice, write_lattice
 from .stats import gaussian_heuristic, get_profile, rhf, slope
+
+
+def _cores_type(value):
+    """argparse type for --cores: 'auto' (case-insensitive) or an integer."""
+    if value.strip().lower() == "auto":
+        return "auto"
+    return int(value)
 
 
 def build_parser():
@@ -30,8 +36,8 @@ def build_parser():
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="show reduction progress")
     parser.add_argument(
-        "--cores", "-j", type=int, default=max(1, cpu_count() // 2),
-        help="number of worker threads",
+        "--cores", "-j", type=_cores_type, default="auto",
+        help="number of worker threads, or 'auto' to use all cores (default)",
     )
 
     parser.add_argument("--input", "-i", help="input file (default: stdin)")
@@ -109,11 +115,6 @@ def _run(args):
         return _run_reference(args)
 
     basis = read_qary_lattice(args.input)
-    rank = basis.shape[1]
-    args.cores = max(
-        1,
-        min(args.cores, ceil(rank / max(2, args.lll_size)), cpu_count() // 2),
-    )
 
     if args.verbose:
         _print_expected_quality(basis, get_profile(basis))
