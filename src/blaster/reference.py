@@ -297,6 +297,33 @@ def _advance_front(cur_front, beta, n, bkz_size):
     return cur_front + (bkz_size - beta + 1), 0
 
 
+def _lll_tour(cols, Ucols, n, block, delta, depth, use_seysen, tr, gso):
+    """In-place segmented-LLL loop shared by ``lll_reduce`` and the BKZ driver.
+
+    Half-offset toggle, per-segment local/deep LLL, then the Seysen/size panel,
+    repeating until the whole basis is weakly-LLL-reduced.
+    """
+    offset = 0
+    while True:
+        offset = (block // 2) if offset == 0 else 0
+        # The offset record heads each iteration; a closing offset record with
+        # stopped=True is appended once the final iteration proves weakly-LLL
+        # reduced, so no add/swap record is ever clobbered.
+        tr.append(("offset", offset, False))
+        for i in range(offset, n, block):
+            w = min(i + block, n) - i
+            tr.append(("segment", i, w))
+            if depth:
+                _deeplll_local(cols, Ucols, i, min(i + block, n), delta, depth, tr, gso)
+            else:
+                _local_lll(cols, Ucols, i, min(i + block, n), delta, tr, gso)
+        (_seysen_panel if use_seysen else _size_panel)(cols, Ucols, tr, gso)
+        mu, r = gso(cols)
+        if weak_lll_holds(mu, r, delta):
+            tr.append(("offset", offset, True))
+            break
+
+
 def lll_reduce(B0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False, depth=0):
     """Exact segmented-LLL returning ``(cols, U_rows, transcript)``.
 
@@ -336,25 +363,7 @@ def lll_reduce(B0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False, dep
     Ucols = [[1 if r == j else 0 for r in range(n)] for j in range(n)]
     tr = []
 
-    offset = 0
-    while True:
-        offset = (block // 2) if offset == 0 else 0
-        # The offset record heads each iteration; a closing offset record with
-        # stopped=True is appended once the final iteration proves weakly-LLL
-        # reduced, so no add/swap record is ever clobbered.
-        tr.append(("offset", offset, False))
-        for i in range(offset, n, block):
-            w = min(i + block, n) - i
-            tr.append(("segment", i, w))
-            if depth:
-                _deeplll_local(cols, Ucols, i, min(i + block, n), d, depth, tr, gso_fn)
-            else:
-                _local_lll(cols, Ucols, i, min(i + block, n), d, tr, gso_fn)
-        (_seysen_panel if use_seysen else _size_panel)(cols, Ucols, tr, gso_fn)
-        mu, r = gso_fn(cols)
-        if weak_lll_holds(mu, r, d):
-            tr.append(("offset", offset, True))
-            break
+    _lll_tour(cols, Ucols, n, block, d, depth, use_seysen, tr, gso_fn)
 
     return cols, transpose_cols(Ucols), tr
 
