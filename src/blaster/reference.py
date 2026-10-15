@@ -18,6 +18,7 @@ from ._exact import (
     column,
     delta_to_fraction,
     full_column_rank,
+    matmul_columns,
     nearest_core,
     nearest_panel,
     to_int_matrix,
@@ -550,14 +551,17 @@ def reduce(B0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False,
         return lll_reduce(B0, delta, gso=gso, lll_size=lll_size,
                           use_seysen=use_seysen, depth=4)
 
-    cols, U_rows, tr = None, None, None
+    cols, U_rows, tr = None, None, []
     for beta_ in _progressive_betas(beta, bkz_prog):
-        cols, U_rows, tr = bkz_reduce(
-            B0, delta, beta=beta_, gso=gso, lll_size=lll_size,
+        stage_B0 = B0_rows if cols is None else transpose_cols(cols)
+        cols, U_stage, tr_stage = bkz_reduce(
+            stage_B0, delta, beta=beta_, gso=gso, lll_size=lll_size,
             use_seysen=use_seysen,
             bkz_tours=bkz_tours if beta_ == beta else 1,
             bkz_size=bkz_size,
         )
+        U_rows = U_stage if U_rows is None else matmul_columns(U_rows, U_stage)
+        tr.extend(tr_stage)
     return cols, U_rows, tr
 
 

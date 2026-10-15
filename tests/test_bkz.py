@@ -1,4 +1,5 @@
 import math
+import os
 import unittest
 from fractions import Fraction
 
@@ -224,13 +225,52 @@ class TestReferenceReduce(unittest.TestCase):
         import blaster.reference as reference
         B0 = [[2] + [0] * 41] + [[0] * i + [2] + [0] * (41 - i) for i in range(1, 42)]
         calls = []
-        def spy(B0, delta=0.99, *, beta, gso=None, lll_size=None, use_seysen=False,
+        def spy(B0_in, delta=0.99, *, beta, gso=None, lll_size=None, use_seysen=False,
                 bkz_tours=8, bkz_size=None):
             calls.append((beta, bkz_tours))
-            return ([], [], [])
+            n = len(B0_in)
+            cols = [column(B0_in, j) for j in range(n)]
+            U_rows = [[1 if i == j else 0 for j in range(n)] for i in range(n)]
+            return cols, U_rows, []
         with mock.patch.object(reference, "bkz_reduce", side_effect=spy):
             reference.reduce(B0, beta=42, bkz_prog=1)
         self.assertEqual(calls, [(40, 1), (41, 1), (42, 8)])
+
+    def test_reduce_chains_progressive_stages(self):
+        from unittest import mock
+        import blaster.reference as reference
+        from blaster._exact import matmul_columns
+        n = 42
+        B0 = [[2 if i == j else 0 for j in range(n)] for i in range(n)]
+        calls = []
+        returned_cols = []
+        def spy(B0_in, delta=0.99, *, beta, gso=None, lll_size=None, use_seysen=False,
+                bkz_tours=8, bkz_size=None):
+            calls.append((beta, bkz_tours, [row[:] for row in B0_in]))
+            # Swap columns 0 and 1 so each stage's output basis is observably
+            # different from its input: the next stage must be fed this output.
+            swapped = [row[:] for row in B0_in]
+            for r in range(n):
+                swapped[r][0], swapped[r][1] = swapped[r][1], swapped[r][0]
+            cols = [column(swapped, j) for j in range(n)]
+            U_rows = [[beta if i == j else 0 for j in range(n)] for i in range(n)]
+            returned_cols.append(cols)
+            return cols, U_rows, [("stage", beta)]
+        with mock.patch.object(reference, "bkz_reduce", side_effect=spy):
+            cols, U_rows, tr = reference.reduce(B0, beta=42, bkz_prog=1)
+
+        # Schedule: three stages (40, 1), (41, 1), (42, 8).
+        self.assertEqual([(b, t) for b, t, _ in calls], [(40, 1), (41, 1), (42, 8)])
+        # Feed-forward: the first stage sees the original basis; each later
+        # stage is fed the previous stage's output, not the original B0.
+        self.assertEqual(calls[0][2], B0)
+        self.assertEqual(calls[1][2], transpose_cols(returned_cols[0]))
+        self.assertEqual(calls[2][2], transpose_cols(returned_cols[1]))
+        # Transform composition: U_40 @ U_41 @ U_42 = diag(40 * 41 * 42).
+        expected = [[40 * 41 * 42 if i == j else 0 for j in range(n)] for i in range(n)]
+        self.assertEqual(U_rows, expected)
+        # Transcript concatenation across all three stages.
+        self.assertEqual(tr, [("stage", 40), ("stage", 41), ("stage", 42)])
 
     def test_reduce_rows_round_trips(self):
         rows = [[2, 3, 5, 7], [0, 4, 6, 8], [0, 0, 7, 9], [0, 0, 0, 11]]
@@ -242,6 +282,22 @@ class TestReferenceReduce(unittest.TestCase):
             transpose_cols(rows), transpose_cols(reduced), transpose_cols(T),
             mode="bkz",
         ).verified)
+
+    @unittest.skipUnless(
+        os.environ.get("BLASTER_SLOW_TESTS") == "1",
+        "reference BKZ at beta>=40 enumerates in pure Python (~3 min); "
+        "set BLASTER_SLOW_TESTS=1 to run",
+    )
+    def test_reduce_beta_40_verifies_end_to_end(self):
+        # Spec §6 item 6: a real (non-spied) end-to-end beta >= 40 reduction
+        # must produce a basis the verifier accepts. beta=40 is the cheapest
+        # beta that exercises the progressive schedule at all (beta<40 short-
+        # circuits to DeepLLL-4), so it is the right gate for the finding.
+        n = 40
+        B0 = [[2 if i == j else 0 for j in range(n)] for i in range(n)]
+        cols, U_rows, tr = reduce(B0, beta=40, bkz_prog=1, bkz_tours=1)
+        rep = verify_reduction(B0, transpose_cols(cols), U_rows, mode="bkz")
+        self.assertTrue(rep.verified)
 
 
 if __name__ == "__main__":
