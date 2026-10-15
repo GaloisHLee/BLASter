@@ -505,3 +505,75 @@ def bkz_reduce(B0, delta=0.99, *, beta, gso=None, lll_size=None,
         tours_done += tours_done_delta
         _lll_tour(cols, Ucols, n, block, d, 4, use_seysen, tr, gso_fn)
     return cols, transpose_cols(Ucols), tr
+
+
+def _bkz_prog_param(bkz_prog, beta):
+    if isinstance(bkz_prog, bool) or not isinstance(bkz_prog, Integral):
+        raise ValueError("bkz_prog must be an integer")
+    bkz_prog = int(bkz_prog)
+    if bkz_prog < 1 or bkz_prog > beta:
+        raise ValueError("bkz_prog must be in [1, beta]")
+    return bkz_prog
+
+
+def reduce(B0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False,
+           depth=0, beta=None, bkz_tours=8, bkz_size=None, bkz_prog=None):
+    """Column-convention reducer mirroring FastInt64 ``reduce()``.
+
+    ``beta is None`` selects segmented LLL; ``beta < 40`` selects deep-LLL-4
+    preprocessing (no tour); ``beta >= 40`` runs the progressive-beta schedule
+    from :func:`_progressive_betas`. ``depth`` cannot be combined with ``beta``.
+    Returns ``(cols, U_rows, transcript)``.
+    """
+    if beta is None:
+        return lll_reduce(B0, delta, gso=gso, lll_size=lll_size,
+                          use_seysen=use_seysen, depth=depth)
+    beta = _beta_param(beta)
+    if depth:
+        raise ValueError("depth cannot be combined with beta")
+    B0_rows = to_int_matrix(B0, name="B0")
+    if not full_column_rank(B0_rows):
+        raise ValueError("basis vectors must be linearly independent")
+    n = len(B0_rows[0])
+    if beta > n:
+        raise ValueError("beta must not exceed the basis rank")
+    block = _segment_width(lll_size, n)
+    bkz_tours = _bkz_tours_param(bkz_tours)
+    if bkz_size is None:
+        bkz_size = max(block, beta)
+    bkz_size = _bkz_size_param(bkz_size, beta, n)
+    if bkz_prog is None:
+        bkz_prog = beta
+    bkz_prog = _bkz_prog_param(bkz_prog, beta)
+
+    if beta < 40:
+        return lll_reduce(B0, delta, gso=gso, lll_size=lll_size,
+                          use_seysen=use_seysen, depth=4)
+
+    cols, U_rows, tr = None, None, None
+    for beta_ in _progressive_betas(beta, bkz_prog):
+        cols, U_rows, tr = bkz_reduce(
+            B0, delta, beta=beta_, gso=gso, lll_size=lll_size,
+            use_seysen=use_seysen,
+            bkz_tours=bkz_tours if beta_ == beta else 1,
+            bkz_size=bkz_size,
+        )
+    return cols, U_rows, tr
+
+
+def reduce_rows(A0, delta=0.99, *, gso=None, lll_size=None, use_seysen=False,
+                depth=0, beta=None, bkz_tours=8, bkz_size=None, bkz_prog=None):
+    """Row-convention reducer: ``A0`` rows are the basis vectors.
+
+    Returns ``(rows, T, transcript)`` with ``T @ A0 == rows`` — the transpose of
+    :func:`reduce`.
+    """
+    A0_rows = to_int_matrix(A0, name="A0")
+    cols, U_rows, tr = reduce(
+        transpose_cols(A0_rows), delta, gso=gso, lll_size=lll_size,
+        use_seysen=use_seysen, depth=depth, beta=beta, bkz_tours=bkz_tours,
+        bkz_size=bkz_size, bkz_prog=bkz_prog,
+    )
+    rows = [c[:] for c in cols]
+    T = transpose_cols(U_rows)
+    return rows, T, tr

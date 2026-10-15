@@ -10,7 +10,7 @@ from blaster._bkz import (
     get_pruning_coefficients,
 )
 from blaster._exact import column, delta_to_fraction, to_int_matrix, transpose_cols
-from blaster.reference import _bkz_segment, _deeplll_local, bkz_reduce
+from blaster.reference import _bkz_segment, _deeplll_local, bkz_reduce, lll_reduce, reduce, reduce_rows
 from blaster.verify import verify_reduction
 from blaster.verify_sage import resolve_gso
 
@@ -185,6 +185,63 @@ class TestVerifyBKZ(unittest.TestCase):
         rep = verify_reduction(B0, B, U, mode="bkz", depth=1)
         self.assertFalse(rep.verified)
         self.assertFalse(rep.deep_ok)
+
+
+class TestReferenceReduce(unittest.TestCase):
+    def test_reduce_beta_none_is_lll(self):
+        B0 = [[2, 3, 5, 7], [0, 4, 6, 8], [0, 0, 7, 9], [0, 0, 0, 11]]
+        cols_a, U_a, tr_a = reduce(B0)
+        cols_b, U_b, tr_b = lll_reduce(B0)
+        self.assertEqual(cols_a, cols_b)
+        self.assertEqual(U_a, U_b)
+        self.assertEqual(tr_a, tr_b)
+
+    def test_reduce_beta_below_40_is_deeplll4(self):
+        B0 = [[2, 3, 5, 7], [0, 4, 6, 8], [0, 0, 7, 9], [0, 0, 0, 11]]
+        cols_a, U_a, tr_a = reduce(B0, beta=2)
+        cols_b, U_b, tr_b = lll_reduce(B0, depth=4)
+        self.assertEqual(cols_a, cols_b)
+        self.assertEqual(U_a, U_b)
+        self.assertEqual(tr_a, tr_b)
+
+    def test_reduce_rejects_depth_with_beta(self):
+        B0 = [[2, 3], [0, 4]]
+        with self.assertRaisesRegex(ValueError, "depth"):
+            reduce(B0, beta=4, depth=2)
+
+    def test_reduce_rejects_beta_above_rank(self):
+        B0 = [[2, 3], [0, 4]]
+        with self.assertRaisesRegex(ValueError, "rank"):
+            reduce(B0, beta=4)
+
+    def test_reduce_rejects_bad_bkz_prog(self):
+        B0 = [[2, 3], [0, 4]]
+        with self.assertRaisesRegex(ValueError, "bkz_prog"):
+            reduce(B0, beta=2, bkz_prog=5)
+
+    def test_reduce_follows_progressive_schedule(self):
+        from unittest import mock
+        import blaster.reference as reference
+        B0 = [[2] + [0] * 41] + [[0] * i + [2] + [0] * (41 - i) for i in range(1, 42)]
+        calls = []
+        def spy(B0, delta=0.99, *, beta, gso=None, lll_size=None, use_seysen=False,
+                bkz_tours=8, bkz_size=None):
+            calls.append((beta, bkz_tours))
+            return ([], [], [])
+        with mock.patch.object(reference, "bkz_reduce", side_effect=spy):
+            reference.reduce(B0, beta=42, bkz_prog=1)
+        self.assertEqual(calls, [(40, 1), (41, 1), (42, 8)])
+
+    def test_reduce_rows_round_trips(self):
+        rows = [[2, 3, 5, 7], [0, 4, 6, 8], [0, 0, 7, 9], [0, 0, 0, 11]]
+        reduced, T, tr = reduce_rows(rows, beta=2)
+        from blaster.verify import verify_reduction
+        # Row convention: T @ rows == reduced. The verifier is column-oriented
+        # (B0 @ U == B), so verify the transposed reduction instead.
+        self.assertTrue(verify_reduction(
+            transpose_cols(rows), transpose_cols(reduced), transpose_cols(T),
+            mode="bkz",
+        ).verified)
 
 
 if __name__ == "__main__":
