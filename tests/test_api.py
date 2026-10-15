@@ -309,6 +309,40 @@ class ReferenceEngineTests(unittest.TestCase):
             reduce_basis([[1, 0], [0, 1]], engine="quantum")
 
 
+class ReferenceBKZApiTests(unittest.TestCase):
+    def setUp(self):
+        self.rows = np.array(
+            [[2, 3, 5, 7], [0, 4, 6, 8], [0, 0, 7, 9], [0, 0, 0, 11]], dtype=object
+        )
+
+    def test_reference_bkz_returns_reduced(self):
+        reduced, transform, _ = reduce_basis(
+            self.rows, engine="reference", beta=2, return_transform=True
+        )
+        from blaster.verify import verify_reduction
+        rep = verify_reduction(
+            self.rows.T.tolist(),
+            np.array(reduced, dtype=object).T.tolist(),
+            np.array(transform, dtype=object).T.tolist(),
+            mode="bkz",
+        )
+        self.assertTrue(rep.structural_ok)
+
+    def test_reference_bkz_return_transform(self):
+        reduced, transform, transcript = reduce_basis(
+            self.rows, engine="reference", beta=2, return_transform=True
+        )
+        self.assertIsInstance(transcript, list)
+
+    def test_reference_bkz_rejects_depth(self):
+        with self.assertRaisesRegex(ValueError, "depth"):
+            reduce_basis(self.rows, engine="reference", beta=2, depth=2)
+
+    def test_reference_still_rejects_unknown_params(self):
+        with self.assertRaisesRegex(ValueError, "cores"):
+            reduce_basis(self.rows, engine="reference", cores=1)
+
+
 class PublicExportsTests(unittest.TestCase):
     """Exact reference reducer and Sage accelerator are public on ``blaster``."""
 

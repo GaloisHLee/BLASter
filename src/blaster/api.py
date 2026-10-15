@@ -5,7 +5,12 @@ import numpy as np
 from ._exact import to_int_matrix, transpose_cols
 from ._matrix import as_int64_matrix, is_sage_matrix, to_sage_matrix
 from .blaster import reduce
-from .reference import lll_reduce, lll_reduce_rows
+from .reference import (
+    lll_reduce,
+    lll_reduce_rows,
+    reduce as reference_reduce,
+    reduce_rows as reference_reduce_rows,
+)
 
 
 def reduce_basis(
@@ -28,14 +33,18 @@ def reduce_basis(
     * ``"fast"`` (default) — the C-accelerated FastInt64 engine, which requires
       every entry to fit in signed int64 and computes GSO in binary64.
     * ``"reference"`` — the exact arbitrary-precision BLASter transcription
-      (ordinary or deep LLL). It accepts entries of any magnitude, supports the
-      ``delta``, ``gso``, ``lll_size``, ``use_seysen`` and ``depth`` parameters, and its third
+      (ordinary or deep LLL, plus BKZ). It accepts entries of any magnitude, supports the
+      ``delta``, ``gso``, ``lll_size``, ``use_seysen``, ``depth``, ``beta``,
+      ``bkz_tours``, ``bkz_size`` and ``bkz_prog`` parameters, and its third
       return value is the decision transcript (a list) rather than a
       ``TimeProfile``. ``gso`` selects the exact Gram-Schmidt backend:
       ``"rational"`` (default) or ``"sage"``. ``lll_size`` is the segment width
       (default: whole rank); ``use_seysen=True`` selects the recursive Seysen
       panel instead of classical size reduction; ``depth > 0`` selects the
-      deep-LLL variant (``depth=0`` is ordinary LLL).
+      deep-LLL variant (``depth=0`` is ordinary LLL). ``beta`` selects the BKZ
+      tour driver (``None`` keeps the segmented LLL path, which cannot be
+      combined with ``depth``); ``bkz_tours``, ``bkz_size`` and ``bkz_prog``
+      control the tour count, block width and progressive-beta schedule.
 
     When ``return_transform`` is true, return ``(reduced, transform, extra)``.
     For row bases, ``transform @ basis == reduced``. For column bases,
@@ -74,30 +83,44 @@ def reduce_basis(
 
 
 def _reduce_basis_reference(basis, *, orientation, return_transform, **parameters):
-    """Exact arbitrary-precision LLL path of :func:`reduce_basis`."""
+    """Exact arbitrary-precision LLL/BKZ path of :func:`reduce_basis`."""
     delta = parameters.pop("delta", 0.99)
     gso = parameters.pop("gso", None)
     lll_size = parameters.pop("lll_size", None)
     use_seysen = parameters.pop("use_seysen", False)
     depth = parameters.pop("depth", 0)
+    beta = parameters.pop("beta", None)
+    bkz_tours = parameters.pop("bkz_tours", 8)
+    bkz_size = parameters.pop("bkz_size", None)
+    bkz_prog = parameters.pop("bkz_prog", None)
     if parameters:
         raise ValueError(
             "reference engine supports only 'delta', 'gso', 'lll_size', "
-            "'use_seysen' and 'depth', got: " + ", ".join(sorted(parameters))
+            "'use_seysen', 'depth', 'beta', 'bkz_tours', 'bkz_size' and "
+            "'bkz_prog', got: " + ", ".join(sorted(parameters))
         )
 
     sage_input = is_sage_matrix(basis)
     sage_ring = basis.base_ring() if sage_input else None
     rows = to_int_matrix(basis, name="basis")
 
-    if orientation == "rows":
+    common = dict(delta=delta, gso=gso, lll_size=lll_size, use_seysen=use_seysen)
+    if beta is not None:
+        if orientation == "rows":
+            reduced_rows, transform, transcript = reference_reduce_rows(
+                rows, **common, depth=depth, beta=beta,
+                bkz_tours=bkz_tours, bkz_size=bkz_size, bkz_prog=bkz_prog)
+        else:
+            cols, U_rows, transcript = reference_reduce(
+                rows, **common, depth=depth, beta=beta,
+                bkz_tours=bkz_tours, bkz_size=bkz_size, bkz_prog=bkz_prog)
+            reduced_rows = transpose_cols(cols)
+            transform = U_rows
+    elif orientation == "rows":
         reduced_rows, transform, transcript = lll_reduce_rows(
-            rows, delta=delta, gso=gso, lll_size=lll_size, use_seysen=use_seysen, depth=depth
-        )
+            rows, **common, depth=depth)
     else:
-        cols, U_rows, transcript = lll_reduce(
-            rows, delta=delta, gso=gso, lll_size=lll_size, use_seysen=use_seysen, depth=depth
-        )
+        cols, U_rows, transcript = lll_reduce(rows, **common, depth=depth)
         reduced_rows = transpose_cols(cols)
         transform = U_rows
 
