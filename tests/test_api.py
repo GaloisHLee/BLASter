@@ -153,6 +153,71 @@ class ReductionApiTests(unittest.TestCase):
                     reduce(self.columns, **call_parameters)
 
 
+class MultiCoreSwitchTests(unittest.TestCase):
+    """M-2: ``cores`` resolves to ``"auto"`` (max) by default, or an explicit int."""
+
+    def setUp(self):
+        self.columns = np.array(
+            [[10, 1, 0], [0, 10, 1], [0, 0, 1]], dtype=np.int64
+        )
+
+    def test_resolve_cores_auto_detects_cpu_count(self):
+        import os as _os
+        from blaster.blaster import _resolve_cores
+
+        detected = _os.cpu_count()
+        expected = detected if (detected is not None and detected >= 1) else 1
+        for spelling in ("auto", "Auto", "AUTO", " auto "):
+            with self.subTest(spelling=spelling):
+                self.assertEqual(_resolve_cores(spelling), expected)
+
+    def test_resolve_cores_explicit_integer(self):
+        from blaster.blaster import _resolve_cores
+
+        self.assertEqual(_resolve_cores(1), 1)
+        self.assertEqual(_resolve_cores(4), 4)
+
+    def test_resolve_cores_rejects_invalid_values(self):
+        from blaster.blaster import _resolve_cores
+
+        for bad in (0, True, "bogus", "4", 2.5, None):
+            with self.subTest(bad=bad):
+                with self.assertRaisesRegex(ValueError, "cores"):
+                    _resolve_cores(bad)
+
+    def test_resolve_cores_falls_back_to_one_when_cpu_count_is_none(self):
+        from unittest import mock
+        import blaster.blaster as blaster_module
+
+        with mock.patch.object(blaster_module.os, "cpu_count", return_value=None):
+            self.assertEqual(blaster_module._resolve_cores("auto"), 1)
+
+    def test_reduce_cores_auto_matches_single_threaded(self):
+        t1, r1, _ = reduce(self.columns, lll_size=3, cores=1, use_seysen=False)
+        ta, ra, _ = reduce(self.columns, lll_size=3, cores="auto", use_seysen=False)
+
+        np.testing.assert_array_equal(r1, ra)
+        np.testing.assert_array_equal(t1, ta)
+
+    def test_reduce_defaults_to_auto_cores(self):
+        import os as _os
+        from unittest import mock
+        import blaster.blaster as blaster_module
+
+        detected = _os.cpu_count()
+        expected = detected if (detected is not None and detected >= 1) else 1
+        with mock.patch.object(blaster_module, "set_num_cores") as set_cores:
+            reduce(self.columns, lll_size=3, use_seysen=False)
+            set_cores.assert_called_once_with(expected)
+
+    def test_reduce_basis_forwards_cores_auto(self):
+        rows = self.columns.T.copy()
+        reduced_1 = reduce_basis(rows, lll_size=3, cores=1, use_seysen=False)
+        reduced_auto = reduce_basis(rows, lll_size=3, cores="auto", use_seysen=False)
+
+        np.testing.assert_array_equal(reduced_1, reduced_auto)
+
+
 class CompletionStatusTests(unittest.TestCase):
     """F-2: ``reduce`` surfaces whether reduction finished normally or was
     interrupted, so a caller can tell a fully reduced basis from a partial one.

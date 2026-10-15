@@ -2,11 +2,13 @@
 BLASter lattice reduction: LLL with QR decomposition, Seysen's reduction, and
 segments, in which lattice reduction is done in parallel.
 """
+import os
 from functools import partial
 from math import isfinite
 from numbers import Integral, Real
 from sys import stderr
 from time import perf_counter_ns
+from typing import Union
 
 import numpy as np
 
@@ -180,6 +182,17 @@ def _integer_parameter(name, value, minimum):
     return value
 
 
+def _resolve_cores(cores):
+    """Resolve ``cores`` to a concrete thread count: ``"auto"`` (any case)
+    selects all available cores; anything else must be an integer >= 1."""
+    if isinstance(cores, str):
+        if cores.strip().lower() == "auto":
+            detected = os.cpu_count()
+            return detected if (detected is not None and detected >= 1) else 1
+        raise ValueError("cores must be 'auto' or an integer")
+    return _integer_parameter("cores", cores, 1)
+
+
 # Primes < 2**31 keep every intermediate product below 2**62, so the modular
 # Gaussian elimination in `_rank_mod_p` cannot overflow int64.
 _RANK_PRIMES = (2147483647, 2147483629, 2147483587, 2147483579, 2147483563)
@@ -237,7 +250,7 @@ def _validated_parameters(
         raise ValueError("delta must satisfy 0.25 < delta < 1.0")
 
     lll_size = _integer_parameter("lll_size", lll_size, 2)
-    cores = _integer_parameter("cores", cores, 1)
+    cores = _resolve_cores(cores)
     depth = _integer_parameter("depth", depth, 0)
     effective_lll_size = min(lll_size, rank)
 
@@ -286,7 +299,7 @@ def _progressive_betas(beta, increment):
 
 
 def reduce(
-        B, lll_size: int = 64, delta: float = 0.99, cores: int = 1, debug: bool = False,
+        B, lll_size: int = 64, delta: float = 0.99, cores: Union[int, str] = "auto", debug: bool = False,
         verbose: bool = False, logfile=None, anim=None, depth: int = 0,
         use_seysen: bool = False, beta=None, bkz_tours: int = 8,
         bkz_size=None, bkz_prog=None):
